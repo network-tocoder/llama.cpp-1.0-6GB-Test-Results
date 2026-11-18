@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ember &amp; Oak — Slow Coffee, Warm Rooms</title>
+<style>
+  /* ── Reset & Variables ─────────────────────────────── */
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --espresso:    #2C1A0E;
+    --espresso-lt: #3E2723;
+    --cream:       #F5F0E8;
+    --cream-dk:    #E8DFD0;
+    --orange:      #D4622B;
+    --orange-glow: #E87840;
+    --text-dk:     #1A0F08;
+    --text-lt:     #F5F0E8;
+    --font-serif:  "Georgia", "Times New Roman", serif;
+    --font-sans:   "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --nav-h:       64px;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--cream);
+    color: var(--text-dk);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* ── Fade-in-on-scroll helper ──────────────────────── */
+  .fade-section {
+    opacity: 0;
+    transform: translateY(32px);
+    transition: opacity .7s cubic-bezier(.22,1,.36,1),
+                transform .7s cubic-bezier(.22,1,.36,1);
+  }
+  .fade-section.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── Sticky Navigation ─────────────────────────────── */
+  .nav {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: var(--nav-h);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 clamp(1.2rem, 4vw, 3rem);
+    z-index: 100;
+    background: transparent;
+    transition: background .35s, box-shadow .35s;
+  }
+  .nav.solid {
+    background: var(--espresso);
+    box-shadow: 0 2px 12px rgba(0,0,0,.35);
+  }
+  .nav__brand {
+    font-family: var(--font-serif);
+    font-size: 1.35rem;
+    color: var(--cream);
+    letter-spacing: .04em;
+    text-decoration: none;
+  }
+  .nav__links { display: flex; gap: 2rem; list-style: none; }
+  .nav__links a {
+    color: var(--cream-dk);
+    text-decoration: none;
+    font-size: .9rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    transition: color .25s;
+  }
+  .nav__links a:hover { color: var(--orange); }
+
+  .nav__hamburger {
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 4px;
+  }
+  .nav__hamburger span {
+    display: block;
+    width: 24px; height: 2px;
+    background: var(--cream);
+    transition: background .25s;
+  }
+
+  /* ── Hero ──────────────────────────────────────────── */
+  .hero {
+    position: relative;
+    height: 100vh;
+    min-height: 540px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background:
+      radial-gradient(ellipse at 50% 80%, rgba(62,39,35,.85) 0%, var(--espresso) 70%),
+      repeating-conic-gradient(var(--espresso-lt) 0% 25%, var(--espresso) 0% 50%) 0 0 / 40px 40px;
+    color: var(--cream);
+    padding: 2rem;
+  }
+  .hero__headline {
+    font-family: var(--font-serif);
+    font-size: clamp(2.4rem, 5.5vw, 4.8rem);
+    font-weight: 400;
+    line-height: 1.15;
+    margin-bottom: 1.6rem;
+    max-width: 26ch;
+  }
+  .hero__sub {
+    font-size: clamp(1rem, 1.6vw, 1.2rem);
+    color: var(--cream-dk);
+    margin-bottom: 2.4rem;
+    max-width: 42ch;
+  }
+
+  .btn {
+    display: inline-block;
+    padding: .85rem 2.4rem;
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    text-decoration: none;
+    border: 2px solid var(--orange);
+    color: var(--cream);
+    background: transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background .3s, color .3s, transform .2s;
+  }
+  .btn:hover {
+    background: var(--orange);
+    color: var(--cream);
+    transform: translateY(-2px);
+  }
+
+  /* ── CSS Cup & Steam ───────────────────────────────── */
+  .cup-scene {
+    position: absolute;
+    bottom: 12%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80px; height: 140px;
+  }
+  .cup {
+    position: absolute;
+    bottom: 0;
+    width: 64px; height: 48px;
+    background: var(--cream);
+    border-radius: 0 0 14px 14px;
+    box-shadow: 0 4px 18px rgba(0,0,0,.45);
+  }
+  .cup::before {
+    content: '';
+    position: absolute;
+    top: -6px; left: -4px;
+    width: 72px; height: 12px;
+    background: var(--cream-dk);
+    border-radius: 6px;
+  }
+  .cup__handle {
+    position: absolute;
+    right: -18px; top: 6px;
+    width: 20px; height: 28px;
+    border: 4px solid var(--cream);
+    border-left: none;
+    border-radius: 0 14px 14px 0;
+  }
+  .steam {
+    position: absolute;
+    bottom: 48px;
+    width: 6px;
+    border-radius: 50%;
+    background: rgba(245,240,232,.45);
+    filter: blur(3px);
+    animation: steam-rise 2.8s ease-in-out infinite;
+  }
+  .steam:nth-child(2) { left: 24px; height: 36px; animation-delay: .4s; }
+  .steam:nth-child(3) { left: 38px; height: 42px; animation-delay: .9s; }
+  .steam:nth-child(4) { left: 50px; height: 30px; animation-delay: 1.3s; }
+
+  @keyframes steam-rise {
+    0%   { opacity: 0; transform: translateY(0) scaleX(1); }
+    30%  { opacity: .7; }
+    100% { opacity: 0; transform: translateY(-70px) scaleX(2.2); }
+  }
+
+  /* ── Section shared ────────────────────────────────── */
+  section { padding: clamp(3.5rem, 8vw, 7rem) clamp(1.2rem, 4vw, 3rem); }
+
+  .section-title {
+    font-family: var(--font-serif);
+    font-size: clamp(1.8rem, 3.5vw, 2.8rem);
+    text-align: center;
+    margin-bottom: .6rem;
+  }
+  .section-sub {
+    text-align: center;
+    color: #6D5A48;
+    max-width: 46ch;
+    margin: 0 auto 3rem;
+    font-size: 1.05rem;
+  }
+
+  /* ── Menu Grid ─────────────────────────────────────── */
+  #menu { background: var(--cream); }
+
+  .menu-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .menu-card {
+    background: #fff;
+    border-radius: 10px;
+    padding: 2rem 1.6rem 1.5rem;
+    box-shadow: 0 2px 8px rgba(44,26,14,.08);
+    transition: transform .3s cubic-bezier(.22,1,.36,1),
+                box-shadow .3s cubic-bezier(.22,1,.36,1);
+    display: flex;
+    flex-direction: column;
+  }
+  .menu-card:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 14px 32px rgba(44,26,14,.18);
+  }
+  .menu-card__icon {
+    font-size: 2rem;
+    margin-bottom: .8rem;
+  }
+  .menu-card__name {
+    font-family: var(--font-serif);
+    font-size: 1.3rem;
+    margin-bottom: .35rem;
+  }
+  .menu-card__desc {
+    font-size: .92rem;
+    color: #6D5A48;
+    flex-grow: 1;
+    margin-bottom: .9rem;
+  }
+  .menu-card__price {
+    font-weight: 700;
+    font-size: 1.15rem;
+    color: var(--orange);
+    align-self: flex-end;
+  }
+
+  /* ── Our Beans ─────────────────────────────────────── */
+  #beans {
+    background: var(--espresso);
+    color: var(--cream);
+  }
+  #beans .section-sub { color: var(--cream-dk); }
+
+  .beans-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 2.2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .bean-card {
+    text-align: center;
+    padding: 2.2rem 1.4rem;
+    border-radius: 10px;
+    background: var(--espresso-lt);
+    border: 1px solid rgba(245,240,232,.08);
+    transition: transform .3s, box-shadow .3s;
+  }
+  .bean-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 12px 28px rgba(0,0,0,.3);
+  }
+
+  /* ── CSS Bean Illustrations ────────────────────────── */
+  .bean-illustration {
+    width: 100px; height: 100px;
+    margin: 0 auto 1.4rem;
+    position: relative;
+  }
+  /* Single bean shape */
+  .bean-shape {
+    width: 72px; height: 96px;
+    background: #8B6F4E;
+    border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%,-50%) rotate(-18deg);
+    box-shadow: inset -6px 2px 10px rgba(0,0,0,.25);
+  }
+  .bean-shape::after {
+    content: '';
+    position: absolute;
+    top: 18%; left: 48%;
+    width: 3px; height: 58%;
+    background: rgba(0,0,0,.3);
+    border-radius: 2px;
+    transform: rotate(8deg);
+  }
+
+  /* Color variants */
+  .bean-card--light .bean-shape  { background: #B89B6A; }
+  .bean-card--medium .bean-shape { background: #8B6F4E; }
+  .bean-card--dark .bean-shape   { background: #5C3D2E; }
+
+  .bean-card__origin {
+    font-family: var(--font-serif);
+    font-size: 1.35rem;
+    margin-bottom: .25rem;
+  }
+  .bean-card__region {
+    font-size: .85rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--orange);
+    margin-bottom: .7rem;
+  }
+  .bean-card__desc {
+    font-size: .92rem;
+    color: var(--cream-dk);
+    line-height: 1.55;
+  }
+  .bean-card__notes {
+    margin-top: .9rem;
+    font-size: .82rem;
+    color: var(--orange-glow);
+    letter-spacing: .06em;
+  }
+
+  /* ── Footer ────────────────────────────────────────── */
+  .footer {
+    background: #1A0F08;
+    color: var(--cream-dk);
+    padding: clamp(2.5rem, 5vw, 4rem) clamp(1.2rem, 4vw, 3rem);
+  }
+  .footer__inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 2.5rem;
+  }
+  .footer__col h3 {
+    font-family: var(--font-serif);
+    font-size: 1.2rem;
+    color: var(--cream);
+    margin-bottom: .8rem;
+  }
+  .footer__col p, .footer__col li {
+    font-size: .95rem;
+    line-height: 1.7;
+    color: var(--cream-dk);
+  }
+  .footer__col ul { list-style: none; }
+  .footer__col a {
+    color: var(--orange);
+    text-decoration: none;
+  }
+  .footer__col a:hover { text-decoration: underline; }
+
+  .footer__bottom {
+    text-align: center;
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid rgba(245,240,232,.1);
+    font-size: .82rem;
+    color: rgba(245,240,232,.4);
+  }
+
+  /* ── Responsive tweaks ─────────────────────────────── */
+  @media (max-width: 700px) {
+    .nav__links { display: none; }
+    .nav__hamburger { display: flex; }
+
+    .nav__links.open {
+      display: flex;
+      flex-direction: column;
+      position: absolute;
+      top: var(--nav-h); left: 0; right: 0;
+      background: var(--espresso);
+      padding: 1.5rem 2rem;
+      gap: 1.2rem;
+      box-shadow: 0 6px 16px rgba(0,0,0,.3);
+    }
+
+    .cup-scene { bottom: 6%; transform: translateX(-50%) scale(.75); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════ Navigation ═══════ -->
+<nav class="nav" id="nav">
+  <a href="#" class="nav__brand">Ember &amp; Oak</a>
+  <button class="nav__hamburger" id="hamburger" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
+  <ul class="nav__links" id="navLinks">
+    <li><a href="#menu">Menu</a></li>
+    <li><a href="#beans">Our Beans</a></li>
+    <li><a href="#footer">Find Us</a></li>
+  </ul>
+</nav>
+
+<!-- ═══════ Hero ═══════ -->
+<header class="hero" id="hero">
+  <h1 class="hero__headline">Slow coffee,<br>warm rooms.</h1>
+  <p class="hero__sub">Small-batch roasts, hand-poured with care, served in a space that feels like home.</p>
+  <a href="#menu" class="btn">See the menu</a>
+
+  <div class="cup-scene" aria-hidden="true">
+    <div class="steam"></div>
+    <div class="steam"></div>
+    <div class="steam"></div>
+    <div class="steam"></div>
+    <div class="cup">
+      <div class="cup__handle"></div>
+    </div>
+  </div>
+</header>
+
+<!-- ═══════ Menu ═══════ -->
+<section id="menu">
+  <h2 class="section-title fade-section">The Menu</h2>
+  <p class="section-sub fade-section">Every drink is an invitation to slow down.</p>
+
+  <div class="menu-grid">
+    <div class="menu-card fade-section">
+      <div class="menu-card__icon">☕</div>
+      <h3 class="menu-card__name">Ember Espresso</h3>
+      <p class="menu-card__desc">Double-shot, full-bodied, with a whisper of dark chocolate and toasted walnut.</p>
+      <span class="menu-card__price">$3.50</span>
+    </div>
+
+    <div class="menu-card fade-section">
+      <div class="menu-card__icon">🥛</div>
+      <h3 class="menu-card__name">Oak Latte</h3>
+      <p class="menu-card__desc">Velvety steamed milk over a smooth espresso, finished with a dust of cinnamon.</p>
+      <span class="menu-card__price">$5.00</span>
+    </div>
+
+    <div class="menu-card fade-section">
+      <div class="menu-card__icon">🧊</div>
+      <h3 class="menu-card__name">Cold Smoke</h3>
+      <p class="menu-card__desc">Nitro-cold brew tapped on draft, silky and effervescent with caramel notes.</p>
+      <span class="menu-card__price">$4.75</span>
+    </div>
+
+    <div class="menu-card fade-section">
+      <div class="menu-card__icon">🍵</div>
+      <h3 class="menu-card__name">Matcha &amp; Honey</h3>
+      <p class="menu-card__desc">Ceremonial-grade matcha whisked with local wildflower honey and oat milk.</p>
+      <span class="menu-card__price">$5.50</span>
+    </div>
+
+    <div class="menu-card fade-section">
+      <div class="menu-card__icon">🍫</div>
+      <h3 class="menu-card__name">Mocha Noir</h3>
+      <p class="menu-card__desc">Single-origin dark cocoa and espresso, crowned with whipped cream and cocoa nibs.</p>
+      <span class="menu-card__price">$5.75</span>
+    </div>
+
+    <div class="menu-card fade-section">
+      <div class="menu-card__icon">🫖</div>
+      <h3 class="menu-card__name">Pour-Over of the Week</h3>
+      <p class="menu-card__desc">A rotating single-origin, brewed to highlight each harvest's unique character.</p>
+      <span class="menu-card__price">$4.50</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════ Our Beans ═══════ -->
+<section id="beans">
+  <h2 class="section-title fade-section">Our Beans</h2>
+  <p class="section-sub fade-section">Sourced direct, roasted in small batches on our brick-lined roastery floor.</p>
+
+  <div class="beans-grid">
+    <div class="bean-card bean-card--light fade-section">
+      <div class="bean-illustration">
+        <div class="bean-shape"></div>
+      </div>
+      <h3 class="bean-card__origin">Ethiopia Yirgacheffe</h3>
+      <p class="bean-card__region">East Africa</p>
+      <p class="bean-card__desc">Grown at 1 900 m on volcanic soil, this light roast is bright and tea-like.</p>
+      <p class="bean-card__notes">Jasmine · Bergamot · Stone fruit</p>
+    </div>
+
+    <div class="bean-card bean-card--medium fade-section">
+      <div class="bean-illustration">
+        <div class="bean-shape"></div>
+      </div>
+      <h3 class="bean-card__origin">Colombia Huila</h3>
+      <p class="bean-card__region">South America</p>
+      <p class="bean-card__desc">A medium roast with balanced sweetness and a velvety, caramel body.</p>
+      <p class="bean-card__notes">Brown sugar · Red apple · Cocoa</p>
+    </div>
+
+    <div class="bean-card bean-card--dark fade-section">
+      <div class="bean-illustration">
+        <div class="bean-shape"></div>
+      </div>
+      <h3 class="bean-card__origin">Sumatra Mandheling</h3>
+      <p class="bean-card__region">Southeast Asia</p>
+      <p class="bean-card__desc">Wet-hulled and roasted dark, this one is earthy, smoky, and deeply satisfying.</p>
+      <p class="bean-card__notes">Cedar · Dark chocolate · Tobacco</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════ Footer ═══════ -->
+<footer class="footer" id="footer">
+  <div class="footer__inner">
+    <div class="footer__col">
+      <h3>Ember &amp; Oak</h3>
+      <p>142 Willowbrook Lane<br>Portland, OR 97205</p>
+      <p style="margin-top:.6rem"><a href="mailto:hello@emberandoak.com">hello@emberandoak.com</a></p>
+    </div>
+
+    <div class="footer__col">
+      <h3>Opening Hours</h3>
+      <ul>
+        <li>Mon – Fri: 7:00 am – 6:00 pm</li>
+        <li>Saturday: 8:00 am – 7:00 pm</li>
+        <li>Sunday: 8:00 am – 5:00 pm</li>
+      </ul>
+    </div>
+
+    <div class="footer__col">
+      <h3>Follow Along</h3>
+      <p>
+        <a href="#">Instagram</a> &nbsp;·&nbsp;
+        <a href="#">Facebook</a> &nbsp;·&nbsp;
+        <a href="#">Newsletter</a>
+      </p>
+      <p style="margin-top:.8rem; font-size:.85rem; color:rgba(245,240,232,.5);">Roastery tours every Saturday at 10 am.</p>
+    </div>
+  </div>
+
+  <p class="footer__bottom">&copy; 2024 Ember &amp; Oak. All rights reserved.</p>
+</footer>
+
+<!-- ═══════ JavaScript ═══════ -->
+<script>
+(function () {
+  'use strict';
+
+  /* ── Sticky nav: add .solid on scroll ─────────────── */
+  var nav = document.getElementById('nav');
+
+  function onScroll() {
+    if (window.scrollY > 60) {
+      nav.classList.add('solid');
+    } else {
+      nav.classList.remove('solid');
+    }
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll(); // run once on load
+
+  /* ── Mobile hamburger toggle ──────────────────────── */
+  var hamburger = document.getElementById('hamburger');
+  var navLinks  = document.getElementById('navLinks');
+
+  hamburger.addEventListener('click', function () {
+    navLinks.classList.toggle('open');
+  });
+
+  /* Close menu when a link is clicked */
+  navLinks.querySelectorAll('a').forEach(function (link) {
+    link.addEventListener('click', function () {
+      navLinks.classList.remove('open');
+    });
+  });
+
+  /* ── Fade-in-on-scroll via IntersectionObserver ───── */
+  var fadeEls = document.querySelectorAll('.fade-section');
+
+  if ('IntersectionObserver' in window) {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, {
+      threshold: 0.15,
+      rootMargin: '0px 0px -40px 0px'
+    });
+
+    fadeEls.forEach(function (el) {
+      observer.observe(el);
+    });
+  } else {
+    /* Fallback: show everything */
+    fadeEls.forEach(function (el) {
+      el.classList.add('visible');
+    });
+  }
+
+})();
+</script>
+
+</body>
+</html>
