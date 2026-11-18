@@ -1,0 +1,4 @@
+test,moe_cache_mib,gpu_mem_used_mib,write_tok_s,read_tok_s,note
+first_run_no_cache,0,3519,30.2,,nvidia-smi 3519 / 6138 MiB
+expert_cache_2gb,2000,5539,40.0,,nvidia-smi 5539 / 6138 MiB
+during_builds,2000,,38.29,542.91,llama.cpp server log (eval / prompt eval)
