@@ -1,38 +1,50 @@
-# llama.cpp 1.0: Two Flags, One 12GB GPU, a 125B Model
+# llama.cpp 1.0 + Qwen 35B on a 6GB GPU
 
-![llama.cpp](https://img.shields.io/badge/llama.cpp-v1.0.0-orange) ![GPU](https://img.shields.io/badge/GPU-RTX%204070%20Super%2012GB-76b900) ![Model](https://img.shields.io/badge/Model-Swift%201.5%20125B-blue) ![Cost](https://img.shields.io/badge/Cloud%20API-%240-brightgreen)
+![llama.cpp](https://img.shields.io/badge/llama.cpp-v1.0.0-orange) ![GPU](https://img.shields.io/badge/GPU-6GB%20V%20ram-76b900) ![RAM](https://img.shields.io/badge/RAM-32GB-0ea5e9) ![Model](https://img.shields.io/badge/Model-Qwen3.6%2035B--A3B-blue) ![Agent](https://img.shields.io/badge/Agent-Pi-black) ![Cost](https://img.shields.io/badge/Cloud%20API-%240-brightgreen)
 
-📺 **Video:** [Two Flags Made llama.cpp 1.0 Way Faster (12GB GPU)](https://www.youtube.com/watch?v=p3PFSpXtJnw) *(add the video link)*
+📺 **Video:** [Qwen 35B Is Now Insanely Fast on a 6GB GPU! (New llama.cpp)](https://youtube.com/@NetworkCoder) *(add the video link)*
 
-I updated to llama.cpp 1.0 and got **exactly the same speed** as before. Then I changed two flags.
+A 35B model is 22 GB on disk, almost **4× bigger than a 6 GB graphics card**. With llama.cpp 1.0 it runs at about **40 tok/s** and builds full apps through a coding agent, fully offline.
 
-| | Default (just upgraded) | Two flags | Gain |
-|---|---|---|---|
-| **Writing** | 16.3 tok/s | **26.5 tok/s** | **+63%** |
-| **Reading a 16K-token prompt** | 107 tok/s (150 s) | **201 tok/s (80 s)** | **+88%** |
-
-Both features ship with 1.0. **Both are off by default.**
+| | First run (no cache) | Expert cache on (2 GB) |
+|---|---|---|
+| **Writing** | 30.2 tok/s | **40.0 tok/s** |
+| **V ram used** | 3.5 of 6 GB | **5.5 of 6 GB** |
+| **During the 4 builds** | | ~37–38 tok/s writing · ~500–600 tok/s reading |
 
 ---
 
 ## The recipe
 
 ```bash
-llama-server -m Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf \
-  -cmoe -lm none \
-  --moe-cache-mib 4864 --moe-cache-cpu-share 0 \
-  -ctk q8_0 -ctv q8_0 -fa on -c 65536 -t 20
+llama-server -m Qwen3.6-35B-A3B-UD-Q4_K_M.gguf \
+  -c 65536 -ctk q8_0 -ctv q8_0 -fa on -t 8 \
+  -cmoe --moe-cache-mib 2000 --moe-cache-cpu-share 0 \
+  -lm none --jinja -a qwen36-35b --port 8081
 ```
 
-| Flag | What it does | Default |
-|---|---|---|
-| `-cmoe` | keep MoE experts in system RAM | off |
-| `--moe-cache-mib N` | keep the most-used experts in V ram | **0 (disabled)** |
-| `--moe-cache-cpu-share F` | share of cache misses the CPU computes instead of uploading | **0** |
-| `-lm none` | load the model pinned in RAM instead of memory-mapped | **mmap** |
+| Flag | What it does |
+|---|---|
+| `-cmoe` | keep the MoE experts in system RAM, not on the GPU |
+| `--moe-cache-mib 2000` | keep the most-used experts in 2 GB of V ram (off by default) |
+| `-lm none` | load the whole model into RAM at start, instead of reading it from the drive as it goes |
+| `-c 65536 -ctk q8_0 -ctv q8_0` | 64K context with an 8-bit KV cache |
+| `-fa on` | flash attention |
 
-**Have the RAM?** Use `-lm none`, give the cache every MB you can, and let the tuning script pick the share (it chose **0** here).
-**Don't have the RAM?** Stay memory-mapped, turn the cache on, and push `--moe-cache-cpu-share` to **0.8–0.95** (that alone gave **+52%**).
+**More V ram?** Raise `--moe-cache-mib` and keep about 0.5 GB free.
+**Less RAM?** Remove `-lm none`. The model is then read from the drive: it still works, just slower.
+
+---
+
+## Why it works
+
+Qwen 3.6 35B is a **mixture of experts** model: 35B parameters in total, but only about **3B are used for each word**. So the parts that aren't active don't need to be on the GPU:
+
+| Level | Speed | Size here | What lives there |
+|---|---|---|---|
+| GPU | fastest, smallest | 6 GB | attention, KV cache, and (with the cache on) the busiest experts |
+| System RAM | slower, bigger, cheaper | 32 GB | all the other experts |
+| NVMe SSD | slowest, largest | 22 GB file | only the model file (with `-lm none`) |
 
 ---
 
@@ -40,88 +52,59 @@ llama-server -m Swift-Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf \
 
 | Part | Spec |
 |---|---|
-| Engine | llama.cpp **v1.0.0** (build 1, commit `b1b770d`), built from source with CUDA |
-| Model | **Swift 1.5** (125B MoE, based on Qwen 3.8 Flash Next), GSQ-RCO **IQ3_XXS**, 76 GB, [ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF](https://huggingface.co/ukisai/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-GGUF) |
-| Experts | 40,925 MiB of experts (reported by the tuning script) |
-| GPU | RTX 4070 Super **12 GB**, PCIe **Gen 3** x16 |
-| CPU | 2× Xeon E5-2673 v4 (80 threads) |
-| RAM | 125 GB |
-| Driver / CUDA | 580.82.09 / CUDA 13.0 driver, built with CUDA 12.8 (`-DCMAKE_CUDA_ARCHITECTURES=89`) |
+| Engine | llama.cpp **v1.0.0**, built from source with CUDA (`-DCMAKE_CUDA_ARCHITECTURES=86 -DLLAMA_USE_PREBUILT_UI=OFF`) |
+| Model | **Qwen3.6-35B-A3B**, Unsloth **UD-Q4_K_M**, 22.1 GB, [unsloth/Qwen3.6-35B-A3B-GGUF](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) |
+| GPU | **6 GB** V ram (6,138 MiB) |
+| RAM | **32 GB** |
+| CPU threads | 8 |
 | Context / KV | 64K, `q8_0` KV cache, flash attention on |
+| Agent | [Pi](https://pi.dev) coding agent, config in [`config/models.json`](config/models.json) |
 
 ---
 
-## All results
+## The builds
 
-Method: 3 × 800-token answers on **different topics** (CPU cache, GPU frame, TCP loss) so the cache can't memorize one answer, then one **16,086-token prompt** for reading speed. One test at a time.
+Each build was a **single prompt** in a fresh Pi session and its own folder. Simple first, then harder.
 
-| Test | Load | Cache | Share | Writing (3 runs) | Reading |
+| Build | Lines | Time | Context used (of 64K) | Fixes | Files |
 |---|---|---|---|---|---|
-| Default | mmap | 0 | 0 | 16.6 / 16.3 / 16.3 | 107 |
-| Cache on | mmap | 5000 | 0 | 19.4 / 18.9 / 16.8 | 119 |
-| CPU share 0.5 | mmap | 5000 | 0.5 | 19.1 / 17.6 / 17.2 | 116 |
-| **CPU share 0.95** | mmap | 5000 | 0.95 | 20.7 / **24.9 / 24.7** | 118 |
-| Pinned + 0.95 | none | 5000 | 0.95 | 23.9 / 23.8 / 22.1 | 199 |
-| Pinned (mlock) + 0.95 | mlock | 5000 | 0.95 | 20.1 / 21.3 / 20.1 | 199 |
-| **Pinned + share 0** | none | 5000 | 0 | **26.7 / 27.1 / 25.8** | **201** |
-| + draft mode (`--spec-default`) | none | 5000 | 0 | 25.1 / 27.2 / 26.1 | 202 |
-| + 40 threads | none | 5000 | 0 | 27.8 / 27.3 / 26.3 | 202 |
-| Bigger batch (`-ub 2048`) | mmap | 5000 | 0.95 | out of GPU memory | — |
+| ☕ Coffee shop landing page | 618 | ~3.5 min | ~14% | 0 | [code](projects/coffee/index.html) · [prompt](projects/coffee/PROMPT.md) |
+| 🎵 Music player app | 450 | ~2 min | ~12% | 0 | [code](projects/player/index.html) · [prompt](projects/player/PROMPT.md) |
+| 🏝️ 3D lighthouse island | 749 | | 18.6% | 0 | [code](projects/lighthouse/index.html) · [prompt](projects/lighthouse/PROMPT.md) |
+| 📷 3D vintage film camera | 965 | | 51% | 1 | [code](projects/camera/index.html) · [prompt](projects/camera/PROMPT.md) |
 
-Full data: [`results.csv`](results.csv) · raw output: [`results/raw_results.txt`](results/raw_results.txt)
+- **Camera:** the first version (955 lines) had one error that stopped the scene loading. The console error was pasted back into Pi, and it fixed it. The file here is the fixed version.
+- **3D builds** load Three.js from a CDN, so they need internet the first time you open them.
+- **Prompts** were reconstructed from the finished builds and the video; the original wording may differ slightly.
 
-### What the tuning script measured
-
-| | Memory-mapped (default) | Pinned (`-lm none`) |
-|---|---|---|
-| GPU upload speed | **4.4 GiB/s** | **10.5 GiB/s** (2.4× faster, same PCIe slot) |
-| CPU read speed | 8.5 GiB/s | 15.1 GiB/s |
-| Recommended share | **0.8** | **0** |
-| Predicted (warm cache) | 26.7 tok/s | 29.6 tok/s |
-| My 3-topic test | 20.8 tok/s | 26.4 tok/s |
-
-Memory-mapped: uploads are slow, so let the CPU handle misses. Pinned: uploads are fast, so let the GPU do it.
-Tables: [`results/tune_mmap.md`](results/tune_mmap.md) · [`results/tune_pinned.md`](results/tune_pinned.md)
-
-### Also tested
-
-| | Result |
-|---|---|
-| KV cache f16 vs q8_0 (64K ctx) | 7,514 MiB vs **6,626 MiB** of V ram (−888 MiB) |
-| FP8 KV cache (`-ctk f8_e4m3`) | ❌ `FP8 cache is not supported for architecture 'qwen4exp'` |
+Full data: [`results.csv`](results.csv) · [`results/builds.csv`](results/builds.csv)
 
 ---
 
-## How much RAM do you need?
+## Try it yourself
 
-| GPU | Model file | RAM | Notes |
-|---|---|---|---|
-| 12 GB | 3-bit IQ3_XXS (76 GB) | **~85 GB+** (96 GB machine) | everything in this repo |
-| 12 GB | 4-bit IQ4_XS (94 GB) | ~128 GB | |
-| 24 GB | 4-bit IQ4_XS (94 GB) | ~96 GB | more experts fit on the GPU |
-| any | any | 64 GB | runs memory-mapped (NVMe reads), cache + CPU share + tuner work, **no pinned loading** |
-
-Only **mixture-of-experts** models benefit from the expert cache; dense models (e.g. 27B) don't.
-
----
-
-## Reproduce it
+You'll need a GPU with **6 GB+ V ram**, **32 GB RAM**, and about **25 GB** of free disk space.
 
 ```bash
-bash scripts/setup.sh                    # build llama.cpp v1.0.0 + download the model
-cp scripts/run.sh ~/run.sh
-bash scripts/tests.sh                    # every test from the video, one at a time
+bash scripts/setup.sh        # build llama.cpp v1.0.0 + download the model
+bash scripts/run_server.sh   # start the server with the settings above
+bash scripts/speed_test.sh   # quick writing-speed check (in a second terminal)
 ```
 
-⚠️ Run tests **from one terminal only**. Two servers on the same port and GPU will invalidate each other's numbers.
+Then point Pi at it:
+
+```bash
+mkdir -p ~/.pi/agent && cp config/models.json ~/.pi/agent/models.json
+mkdir -p ~/work/coffee && cd ~/work/coffee && pi
+```
+
+Change `-DCMAKE_CUDA_ARCHITECTURES` in `setup.sh` for your card: **86** = RTX 30 / A2000, **89** = RTX 40, **120** = RTX 50.
 
 ---
 
 ## Read these numbers carefully
 
-Every number here is a photo of **one machine**: this GPU, this PCIe 3 slot, these CPUs, this file, this version. On a faster link the CPU share may matter less; with a smaller cache it may matter more. Run the tuning script on your own machine.
-
-My Strata result from the previous video (~75 tok/s) was a **different card and machine**, so it's a reference, not a head-to-head.
+Every number here comes from **one machine**: this GPU, this RAM, this model file, this llama.cpp version. Your speed will depend on your GPU, your RAM speed and your PCIe link. Please share yours.
 
 ---
 
@@ -132,8 +115,10 @@ My Strata result from the previous video (~75 tok/s) was a **different card and 
 | 1 | Run a 125B model on one GPU (Strata) | RTX 3090 24 GB | |
 | 2 | Free local AI coding agent (Strata + opencode) | RTX 4060 Ti 16 GB | |
 | 3 | 125B on 12 GB V ram (Strata + Pi 1.0) | RTX 3080 Ti 12 GB | [repo](https://github.com/network-tocoder/125B-Local-AI-on-a-12GB-GPU-Strata-Pi-1.0-Coding-Agent) |
-| **4** | **llama.cpp 1.0: two flags, 12 GB GPU** | RTX 4070 Super 12 GB | this repo |
+| 4 | llama.cpp 1.0: two flags, 12 GB GPU | RTX 4070 Super 12 GB | |
+| 5 | Can llama.cpp 1.0 beat Strata at coding? | RTX 3080 Ti 12 GB | |
+| **6** | **llama.cpp 1.0 + Qwen 35B on 6 GB** | **6 GB** | this repo |
 
-⭐ If this helped, star the repo so more people find it. **Tell me what the tuning script recommends on your machine** in an issue or in the video comments.
+⭐ If this helped, star the repo so more people find it. **Share your GPU, RAM and tok/s** in an issue or in the video comments.
 
-**Sources:** [llama.cpp v1.0.0 release](https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0) · [Hugging Face blog: llama.cpp v1.0.0](https://huggingface.co/blog/ggml-org/llama-cpp-v1) · [MoE cache docs](https://github.com/ggml-org/llama.cpp/blob/master/docs/moe-cache.md)
+**Sources:** [llama.cpp v1.0.0 release](https://github.com/ggml-org/llama.cpp/releases/tag/v1.0.0) · [MoE cache docs](https://github.com/ggml-org/llama.cpp/blob/master/docs/moe-cache.md) · [Unsloth Qwen3.6-35B-A3B GGUF](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) · [Pi coding agent](https://pi.dev)
