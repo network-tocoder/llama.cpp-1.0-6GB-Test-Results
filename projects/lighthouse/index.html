@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Floating Island Diorama</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #000; }
+  canvas { display: block; }
+</style>
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+</head>
+<body>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ─── Setup ───
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 200);
+camera.position.set(12, 8, 12);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.5;
+controls.target.set(0, 1, 0);
+controls.maxDistance = 30;
+controls.minDistance = 5;
+
+// ─── Materials (flat-shaded) ───
+function mat(color, opts = {}) {
+  return new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.85, metalness: 0.05, ...opts });
+}
+
+const mats = {
+  grass:     mat(0x4a8c3f),
+  grassDark: mat(0x3a7030),
+  dirt:      mat(0x8b6f47),
+  rock:      mat(0x6b6b6b),
+  rockDark:  mat(0x555555),
+  rockLight: mat(0x888888),
+  lighthouseWhite: mat(0xf5f0e8),
+  lighthouseRed:   mat(0xc0392b),
+  lighthouseRoof:  mat(0x2c3e50),
+  wood:      mat(0x8b5e3c),
+  woodDark:  mat(0x6b4226),
+  roof:      mat(0x5c3a21),
+  windowLit: new THREE.MeshBasicMaterial({ color: 0xffdd44 }),
+  water:     new THREE.MeshStandardMaterial({ color: 0x2980b9, transparent: true, opacity: 0.7, flatShading: true, roughness: 0.3, metalness: 0.2 }),
+  cloud:     new THREE.MeshStandardMaterial({ color: 0xffffff, flatShading: true, roughness: 1 }),
+  treeTrunk: mat(0x6b4226),
+  treeLeaf:  mat(0x2d6b30),
+  treeLeafDark: mat(0x1e5520),
+  rockSmall: mat(0x7a7a7a),
+  seagull:   mat(0xf0f0f0),
+  dockPost:  mat(0x5c3a21),
+};
+
+// ─── Lighting ───
+const ambientLight = new THREE.AmbientLight(0x8899bb, 0.6);
+scene.add(ambientLight);
+
+const sunLight = new THREE.DirectionalLight(0xffeedd, 1.2);
+sunLight.position.set(10, 20, 10);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048, 2048);
+sunLight.shadow.camera.near = 0.5;
+sunLight.shadow.camera.far = 60;
+sunLight.shadow.camera.left = -15;
+sunLight.shadow.camera.right = 15;
+sunLight.shadow.camera.top = 15;
+sunLight.shadow.camera.bottom = -15;
+sunLight.shadow.bias = -0.001;
+scene.add(sunLight);
+
+const hemiLight = new THREE.HemisphereLight(0x87ceeb, 0x444411, 0.4);
+scene.add(hemiLight);
+
+// ─── Helpers ───
+function mergeGeometries(geometries, transforms) {
+  let merged;
+  if (geometries.length === 1) return geometries[0].clone();
+  merged = geometries[0].clone();
+  if (transforms && transforms[0]) merged.applyMatrix4(transforms[0]);
+  for (let i = 1; i < geometries.length; i++) {
+    const g = geometries[i].clone();
+    if (transforms && transforms[i]) g.applyMatrix4(transforms[i]);
+    merged = merged.index ? merged.mergeIntoIndex(g) : (() => {
+      const merged2 = new THREE.BufferGeometry();
+      const pos1 = merged.attributes.position.array;
+      const pos2 = g.attributes.position.array;
+      const normal1 = merged.attributes.normal.array;
+      const normal2 = g.attributes.normal.array;
+      merged2.setAttribute('position', new THREE.BufferAttribute(new Float32Array([...pos1, ...pos2]), 3));
+      merged2.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([...normal1, ...normal2]), 3));
+      return merged2;
+    })();
+  }
+  return merged;
+}
+
+// ─── Island ───
+const islandGroup = new THREE.Group();
+
+// Top surface (flat-ish)
+const islandTopGeo = new THREE.CylinderGeometry(4.5, 4.5, 0.6, 8);
+const posA = islandTopGeo.attributes.position;
+for (let i = 0; i < posA.count; i++) {
+  const x = posA.getX(i), z = posA.getZ(i);
+  const noise = (Math.sin(x * 1.2) * Math.cos(z * 0.8) * 0.15 + Math.sin(x * 2.5 + z * 1.7) * 0.08);
+  posA.setY(i, posA.getY(i) + noise);
+  posA.setX(i, x * (0.9 + Math.sin(z) * 0.08));
+  posA.setZ(i, z * (0.9 + Math.cos(x) * 0.08));
+}
+islandTopGeo.computeVertexNormals();
+const islandTop = new THREE.Mesh(islandTopGeo, mats.grass);
+islandTop.position.y = 0.3;
+islandTop.castShadow = true;
+islandTop.receiveShadow = true;
+islandGroup.add(islandTop);
+
+// Underside (tapered rock)
+const bottomGeo = new THREE.CylinderGeometry(4.5, 0.8, 3.0, 8, 4);
+const posB = bottomGeo.attributes.position;
+for (let i = 0; i < posB.count; i++) {
+  const x = posB.getX(i), z = posB.getZ(i), y = posB.getY(i);
+  const angle = Math.atan2(z, x);
+  const jag = Math.sin(angle * 4) * 0.3 + Math.sin(angle * 7 + y * 2) * 0.15 + Math.cos(angle * 3) * 0.2;
+  const r = Math.sqrt(x * x + z * z);
+  const factor = 0.5 + 0.5 * (y + 1.5) / 3.0;
+  posB.setX(i, x * (1 + jag * 0.12 * (1 - factor)));
+  posB.setZ(i, z * (1 + jag * 0.12 * (1 - factor)));
+  if (y < 0) {
+    posB.setY(i, y - Math.abs(jag) * 0.4);
+  }
+}
+bottomGeo.computeVertexNormals();
+const islandBottom = new THREE.Mesh(bottomGeo, mats.rockDark);
+islandBottom.position.y = -1.2;
+islandBottom.castShadow = true;
+islandGroup.add(islandBottom);
+
+// Dirt layer between grass and rock
+const dirtGeo = new THREE.CylinderGeometry(4.3, 3.8, 0.4, 8);
+const dirtLayer = new THREE.Mesh(dirtGeo, mats.dirt);
+dirtLayer.position.y = -0.3;
+islandGroup.add(dirtLayer);
+
+// Rock bumps on top
+const rockPositions = [
+  { x: 3.2, z: 0.5, s: 0.35 }, { x: -2.8, z: 2.0, s: 0.3 }, { x: 0.5, z: -3.5, s: 0.25 },
+  { x: -3.5, z: -1.5, s: 0.4 }, { x: 2.0, z: 3.0, s: 0.2 },
+];
+rockPositions.forEach(rp => {
+  const rg = new THREE.DodecahedronGeometry(rp.s, 0);
+  const rm = new THREE.Mesh(rg, mats.rock);
+  rm.position.set(rp.x, 0.55 + rp.s * 0.3, rp.z);
+  rm.rotation.set(Math.random(), Math.random(), Math.random());
+  rm.castShadow = true;
+  rm.receiveShadow = true;
+  islandGroup.add(rm);
+});
+
+scene.add(islandGroup);
+
+// ─── Lighthouse ───
+const lhGroup = new THREE.Group();
+
+// Tower (segmented)
+const towerSegments = 10;
+for (let i = 0; i < towerSegments; i++) {
+  const t = i / towerSegments;
+  const radius = 0.6 - t * 0.25;
+  const segGeo = new THREE.CylinderGeometry(radius, radius + 0.01, 0.42, 8);
+  const isRed = Math.floor(i / 2) % 2 === 0;
+  const seg = new THREE.Mesh(segGeo, isRed ? mats.lighthouseRed : mats.lighthouseWhite);
+  seg.position.y = i * 0.42 + 0.55;
+  seg.castShadow = true;
+  seg.receiveShadow = true;
+  lhGroup.add(seg);
+}
+
+// Gallery deck
+const deckGeo = new THREE.CylinderGeometry(0.85, 0.75, 0.12, 8);
+const deck = new THREE.Mesh(deckGeo, mats.lighthouseRoof);
+deck.position.y = towerSegments * 0.42 + 0.55;
+deck.castShadow = true;
+lhGroup.add(deck);
+
+// Gallery railing (tiny posts)
+for (let i = 0; i < 8; i++) {
+  const angle = (i / 8) * Math.PI * 2;
+  const postGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.35, 4);
+  const post = new THREE.Mesh(postGeo, mats.woodDark);
+  post.position.set(Math.cos(angle) * 0.75, towerSegments * 0.42 + 0.85, Math.sin(angle) * 0.75);
+  lhGroup.add(post);
+}
+
+// Lantern room
+const lanternGeo = new THREE.CylinderGeometry(0.45, 0.55, 0.6, 8);
+const lantern = new THREE.Mesh(lanternGeo, new THREE.MeshStandardMaterial({ color: 0x333333, flatShading: true, metalness: 0.6, roughness: 0.3 }));
+lantern.position.y = towerSegments * 0.42 + 1.2;
+lantern.castShadow = true;
+lhGroup.add(lantern);
+
+// Glass panels for lantern
+const glassGeo = new THREE.CylinderGeometry(0.42, 0.48, 0.5, 8, 1, true);
+const glassMat = new THREE.MeshStandardMaterial({ color: 0xffee88, transparent: true, opacity: 0.5, flatShading: true, side: THREE.DoubleSide });
+const glass = new THREE.Mesh(glassGeo, glassMat);
+glass.position.y = towerSegments * 0.42 + 1.2;
+lhGroup.add(glass);
+
+// Roof
+const roofGeo = new THREE.ConeGeometry(0.55, 0.4, 8);
+const lhRoof = new THREE.Mesh(roofGeo, mats.lighthouseRoof);
+lhRoof.position.y = towerSegments * 0.42 + 1.7;
+lhRoof.castShadow = true;
+lhGroup.add(lhRoof);
+
+// Lamp (glowing point)
+const lampGeo = new THREE.SphereGeometry(0.15, 6, 4);
+const lampMat = new THREE.MeshBasicMaterial({ color: 0xffffaa });
+const lamp = new THREE.Mesh(lampGeo, lampMat);
+lamp.position.y = towerSegments * 0.42 + 1.15;
+lhGroup.add(lamp);
+
+// Lamp glow (sprite)
+const glowCanvas = document.createElement('canvas');
+glowCanvas.width = 64;
+glowCanvas.height = 64;
+const ctx = glowCanvas.getContext('2d');
+const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+gradient.addColorStop(0, 'rgba(255,255,200,1)');
+gradient.addColorStop(0.3, 'rgba(255,220,100,0.6)');
+gradient.addColorStop(1, 'rgba(255,200,50,0)');
+ctx.fillStyle = gradient;
+ctx.fillRect(0, 0, 64, 64);
+const glowTexture = new THREE.CanvasTexture(glowCanvas);
+const glowSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture, transparent: true, blending: THREE.AdditiveBlending }));
+glowSprite.position.copy(lamp.position);
+glowSprite.scale.set(1.5, 1.5, 1);
+lhGroup.add(glowSprite);
+
+// Light beam (rotating cone)
+const beamGeo = new THREE.ConeGeometry(2.5, 10, 8, 1, true);
+const beamMat = new THREE.MeshBasicMaterial({ color: 0xffffcc, transparent: true, opacity: 0.12, side: THREE.DoubleSide, depthWrite: false });
+const beam = new THREE.Mesh(beamGeo, beamMat);
+beam.position.y = towerSegments * 0.42 + 1.15;
+lhGroup.add(beam);
+
+// Inner beam
+const innerBeamGeo = new THREE.ConeGeometry(0.8, 10, 8, 1, true);
+const innerBeamMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false });
+const innerBeam = new THREE.Mesh(innerBeamGeo, innerBeamMat);
+innerBeam.position.y = towerSegments * 0.42 + 1.15;
+lhGroup.add(innerBeam);
+
+lhGroup.position.set(-1.0, 0.3, -0.5);
+scene.add(lhGroup);
+
+// ─── Lighthouse Point Light ───
+const lhLight = new THREE.PointLight(0xffdd66, 2, 15, 2);
+lhLight.position.set(-1.0, 4.0, -0.5);
+lhLight.castShadow = false;
+scene.add(lhLight);
+
+// ─── Cottage ───
+const cottageGroup = new THREE.Group();
+
+// Walls
+const wallGeo = new THREE.BoxGeometry(1.8, 1.4, 1.6);
+const walls = new THREE.Mesh(wallGeo, mats.wood);
+walls.position.y = 0.7;
+walls.castShadow = true;
+walls.receiveShadow = true;
+cottageGroup.add(walls);
+
+// Roof
+const cRoofGeo = new THREE.ConeGeometry(1.5, 0.8, 4);
+const cRoof = new THREE.Mesh(cRoofGeo, mats.roof);
+cRoof.position.y = 1.8;
+cRoof.rotation.y = Math.PI / 4;
+cRoof.castShadow = true;
+cottageGroup.add(cRoof);
+
+// Door
+const doorGeo = new THREE.BoxGeometry(0.4, 0.7, 0.05);
+const door = new THREE.Mesh(doorGeo, mats.woodDark);
+door.position.set(0, 0.35, 0.82);
+cottageGroup.add(door);
+
+// Window (lit)
+const winFrameGeo = new THREE.BoxGeometry(0.5, 0.5, 0.06);
+const winFrame = new THREE.Mesh(winFrameGeo, mats.woodDark);
+winFrame.position.set(0.55, 0.9, 0.82);
+cottageGroup.add(winFrame);
+
+const winGlassGeo = new THREE.PlaneGeometry(0.38, 0.38);
+const winGlass = new THREE.Mesh(winGlassGeo, mats.windowLit);
+winGlass.position.set(0.55, 0.9, 0.83);
+cottageGroup.add(winGlass);
+
+// Cottage window light
+const cwLight = new THREE.PointLight(0xffaa33, 1, 5);
+cwLight.position.set(0.55, 0.9, 1.2);
+cottageGroup.add(cwLight);
+
+// Chimney
+const chimGeo = new THREE.BoxGeometry(0.25, 0.6, 0.25);
+const chim = new THREE.Mesh(chimGeo, mats.rock);
+chim.position.set(-0.6, 2.0, -0.3);
+chim.castShadow = true;
+cottageGroup.add(chim);
+
+cottageGroup.position.set(2.5, 0.3, 1.5);
+cottageGroup.rotation.y = -0.3;
+scene.add(cottageGroup);
+
+// ─── Dock ───
+const dockGroup = new THREE.Group();
+
+// Main planks
+for (let i = 0; i < 5; i++) {
+  const plankGeo = new THREE.BoxGeometry(0.7, 0.08, 1.4);
+  const plank = new THREE.Mesh(plankGeo, i % 2 === 0 ? mats.wood : mats.woodDark);
+  plank.position.set(-3.8 - i * 1.0, 0.05, 2.8);
+  plank.castShadow = true;
+  plank.receiveShadow = true;
+  dockGroup.add(plank);
+}
+
+// Posts
+for (let i = 0; i < 3; i++) {
+  const postGeo = new THREE.CylinderGeometry(0.06, 0.08, 0.8, 5);
+  const post = new THREE.Mesh(postGeo, mats.dockPost);
+  post.position.set(-3.8 - i * 1.6, -0.2, 2.1);
+  post.castShadow = true;
+  dockGroup.add(post);
+}
+
+// Cross beams
+for (let i = 0; i < 2; i++) {
+  const beamGeo = new THREE.BoxGeometry(0.06, 0.06, 1.4);
+  const beam = new THREE.Mesh(beamGeo, mats.woodDark);
+  beam.position.set(-3.8 - i * 1.6, 0.0, 3.5);
+  dockGroup.add(beam);
+}
+
+// Small post at end
+const endPostGeo = new THREE.CylinderGeometry(0.07, 0.09, 1.0, 5);
+const endPost = new THREE.Mesh(endPostGeo, mats.dockPost);
+endPost.position.set(-8.3, -0.1, 2.8);
+endPost.castShadow = true;
+dockGroup.add(endPost);
+
+scene.add(dockGroup);
+
+// ─── Pine Trees ───
+function makeTree(x, y, z, scale = 1) {
+  const group = new THREE.Group();
+  // Trunk
+  const trunkGeo = new THREE.CylinderGeometry(0.06 * scale, 0.1 * scale, 0.8 * scale, 5);
+  const trunk = new THREE.Mesh(trunkGeo, mats.treeTrunk);
+  trunk.position.y = 0.4 * scale;
+  trunk.castShadow = true;
+  group.add(trunk);
+  // Foliage layers
+  const layers = [
+    { y: 0.9, r: 0.5, h: 0.6 },
+    { y: 1.3, r: 0.38, h: 0.5 },
+    { y: 1.7, r: 0.25, h: 0.4 },
+  ];
+  layers.forEach((l, idx) => {
+    const fGeo = new THREE.ConeGeometry(l.r * scale, l.h * scale, 6);
+    const fMat = idx % 2 === 0 ? mats.treeLeaf : mats.treeLeafDark;
+    const foliage = new THREE.Mesh(fGeo, fMat);
+    foliage.position.y = l.y * scale;
+    foliage.castShadow = true;
+    group.add(foliage);
+  });
+  group.position.set(x, y, z);
+  return group;
+}
+
+const treePositions = [
+  { x: 1.5, z: -2.5, s: 1.0 },
+  { x: -3.0, z: -2.5, s: 0.8 },
+  { x: 3.5, z: -1.0, s: 0.9 },
+  { x: -1.5, z: 3.0, s: 0.7 },
+  { x: 0.8, z: 2.8, s: 0.85 },
+  { x: -3.8, z: 0.5, s: 0.65 },
+];
+treePositions.forEach(tp => {
+  scene.add(makeTree(tp.x, 0.3, tp.z, tp.s));
+});
+
+// ─── Water Ring ───
+const waterGeo = new THREE.RingGeometry(4.0, 7.5, 48, 3);
+// Flatten to a plane
+const waterPos = waterGeo.attributes.position;
+for (let i = 0; i < waterPos.count; i++) {
+  waterPos.setZ(i, waterPos.getZ(i) * 0.02);
+}
+waterGeo.computeVertexNormals();
+const water = new THREE.Mesh(waterGeo, mats.water);
+water.rotation.x = -Math.PI / 2;
+water.position.y = -2.8;
+water.receiveShadow = true;
+scene.add(water);
+
+// ─── Clouds ───
+const cloudGroup = new THREE.Group();
+const clouds = [];
+
+function makeCloud(x, y, z, scale) {
+  const group = new THREE.Group();
+  const parts = 4 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < parts; i++) {
+    const s = (0.6 + Math.random() * 0.8) * scale;
+    const geo = new THREE.DodecahedronGeometry(s, 0);
+    const cloud = new THREE.Mesh(geo, mats.cloud);
+    cloud.position.set(
+      (Math.random() - 0.5) * 2.0 * scale,
+      (Math.random() - 0.5) * 0.5 * scale,
+      (Math.random() - 0.5) * 1.5 * scale
+    );
+    cloud.castShadow = false;
+    group.add(cloud);
+  }
+  group.position.set(x, y, z);
+  return group;
+}
+
+for (let i = 0; i < 8; i++) {
+  const angle = (i / 8) * Math.PI * 2;
+  const radius = 25 + Math.random() * 20;
+  const cloud = makeCloud(
+    Math.cos(angle) * radius,
+    8 + Math.random() * 8,
+    Math.sin(angle) * radius,
+    0.8 + Math.random() * 1.2
+  );
+  cloud.userData = { angle, radius, speed: 0.02 + Math.random() * 0.03, y: cloud.position.y };
+  clouds.push(cloud);
+  cloudGroup.add(cloud);
+}
+scene.add(cloudGroup);
+
+// ─── Seagulls ───
+const seagulls = [];
+
+function makeSeagull() {
+  const group = new THREE.Group();
+  // Body
+  const bodyGeo = new THREE.ConeGeometry(0.06, 0.3, 4);
+  bodyGeo.rotateX(Math.PI / 2);
+  const body = new THREE.Mesh(bodyGeo, mats.seagull);
+  group.add(body);
+  // Wings
+  const wingGeo = new THREE.PlaneGeometry(0.5, 0.12);
+  const wingMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, flatShading: true, side: THREE.DoubleSide });
+  const leftWing = new THREE.Mesh(wingGeo, wingMat);
+  leftWing.position.set(-0.25, 0.02, 0);
+  group.add(leftWing);
+  const rightWing = new THREE.Mesh(wingGeo, wingMat);
+  rightWing.position.set(0.25, 0.02, 0);
+  group.add(rightWing);
+  group.userData = { leftWing, rightWing, flapPhase: Math.random() * Math.PI * 2 };
+  return group;
+}
+
+for (let i = 0; i < 3; i++) {
+  const gull = makeSeagull();
+  const angle = (i / 3) * Math.PI * 2;
+  gull.position.set(
+    Math.cos(angle) * 8,
+    6 + i * 1.5,
+    Math.sin(angle) * 8
+  );
+  gull.userData.orbitAngle = angle;
+  gull.userData.orbitRadius = 7 + i * 1.5;
+  gull.userData.orbitSpeed = 0.3 + i * 0.05;
+  gull.userData.orbitY = 6 + i * 1.5;
+  gull.userData.baseY = gull.position.y;
+  seagulls.push(gull);
+  scene.add(gull);
+}
+
+// ─── Stars ───
+const starsGeo = new THREE.BufferGeometry();
+const starPositions = [];
+const starColors = [];
+for (let i = 0; i < 500; i++) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.random() * Math.PI * 0.45 + 0.05;
+  const r = 80 + Math.random() * 20;
+  starPositions.push(
+    Math.cos(theta) * Math.sin(phi) * r,
+    Math.cos(phi) * r,
+    Math.sin(theta) * Math.sin(phi) * r
+  );
+  const brightness = 0.5 + Math.random() * 0.5;
+  starColors.push(brightness, brightness, brightness + Math.random() * 0.2);
+}
+starsGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPositions, 3));
+starsGeo.setAttribute('color', new THREE.Float32BufferAttribute(starColors, 3));
+const starsMat = new THREE.PointsMaterial({ size: 0.3, vertexColors: true, transparent: true, opacity: 0, sizeAttenuation: true });
+const stars = new THREE.Points(starsGeo, starsMat);
+scene.add(stars);
+
+// ─── Sky Dome ───
+const skyGeo = new THREE.SphereGeometry(90, 16, 12);
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide,
+  uniforms: {
+    topColor: { value: new THREE.Color(0x87ceeb) },
+    bottomColor: { value: new THREE.Color(0xd4e8f0) },
+    offset: { value: 10 },
+    exponent: { value: 0.6 },
+  },
+  vertexShader: `
+    varying vec3 vWorldPosition;
+    void main() {
+      vec4 worldPos = modelMatrix * vec4(position, 1.0);
+      vWorldPosition = worldPos.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 topColor;
+    uniform vec3 bottomColor;
+    uniform float offset;
+    uniform float exponent;
+    varying vec3 vWorldPosition;
+    void main() {
+      float h = normalize(vWorldPosition + offset).y;
+      gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+    }
+  `,
+});
+const sky = new THREE.Mesh(skyGeo, skyMat);
+scene.add(sky);
+
+// ─── Day-Dusk Cycle ───
+const cycleDuration = 30; // seconds
+let cycleTime = 0;
+
+function getDayPhase(t) {
+  // t: 0..1, 0=noon, 0.5=midnight, 1=noon
+  const phase = t;
+  if (phase < 0.25) {
+    // day -> dusk
+    return { phase: 'dusk', t: phase / 0.25 };
+  } else if (phase < 0.5) {
+    // dusk -> night
+    return { phase: 'night', t: (phase - 0.25) / 0.25 };
+  } else if (phase < 0.75) {
+    // night -> dawn
+    return { phase: 'dawn', t: (phase - 0.5) / 0.25 };
+  } else {
+    // dawn -> day
+    return { phase: 'day', t: (phase - 0.75) / 0.25 };
+  }
+}
+
+function lerpColor(c1, c2, t) {
+  return c1.clone().lerp(c2, t);
+}
+
+// Color presets
+const colors = {
+  day: {
+    ambient: new THREE.Color(0x8899bb),
+    sun: new THREE.Color(0xffeedd),
+    topSky: new THREE.Color(0x4a90d9),
+    botSky: new THREE.Color(0xd4e8f0),
+    ambientIntensity: 0.6,
+    sunIntensity: 1.2,
+    lhIntensity: 0.3,
+    winIntensity: 0.2,
+    starOpacity: 0,
+    beamOpacity: 0.06,
+  },
+  dusk: {
+    ambient: new THREE.Color(0x886644),
+    sun: new THREE.Color(0xff8844),
+    topSky: new THREE.Color(0x2c3e6b),
+    botSky: new THREE.Color(0xe8845c),
+    ambientIntensity: 0.4,
+    sunIntensity: 0.8,
+    lhIntensity: 1.5,
+    winIntensity: 0.8,
+    starOpacity: 0.3,
+    beamOpacity: 0.18,
+  },
+  night: {
+    ambient: new THREE.Color(0x223355),
+    sun: new THREE.Color(0x445577),
+    topSky: new THREE.Color(0x0a0a2e),
+    botSky: new THREE.Color(0x1a1a4e),
+    ambientIntensity: 0.15,
+    sunIntensity: 0.15,
+    lhIntensity: 3.0,
+    winIntensity: 1.0,
+    starOpacity: 1.0,
+    beamOpacity: 0.35,
+  },
+};
+
+function applyCycle(t) {
+  const p = getDayPhase(t);
+  let from, to;
+
+  switch (p.phase) {
+    case 'dusk':
+      from = colors.day; to = colors.dusk; break;
+    case 'night':
+      from = colors.dusk; to = colors.night; break;
+    case 'dawn':
+      from = colors.night; to = colors.day; break;
+    case 'day':
+      from = colors.day; to = colors.dusk; break; // just keep in day mode
+  }
+
+  const s = p.phase === 'dawn' ? p.t : p.t;
+  const st = Math.min(1, Math.max(0, s));
+
+  const c = {
+    ambient: lerpColor(from.ambient, to.ambient, st),
+    sun: lerpColor(from.sun, to.sun, st),
+    topSky: lerpColor(from.topSky, to.topSky, st),
+    botSky: lerpColor(from.botSky, to.botSky, st),
+    ambientIntensity: from.ambientIntensity + (to.ambientIntensity - from.ambientIntensity) * st,
+    sunIntensity: from.sunIntensity + (to.sunIntensity - from.sunIntensity) * st,
+    lhIntensity: from.lhIntensity + (to.lhIntensity - from.lhIntensity) * st,
+    winIntensity: from.winIntensity + (to.winIntensity - from.winIntensity) * st,
+    starOpacity: from.starOpacity + (to.starOpacity - from.starOpacity) * st,
+    beamOpacity: from.beamOpacity + (to.beamOpacity - from.beamOpacity) * st,
+  };
+
+  ambientLight.color.copy(c.ambient);
+  ambientLight.intensity = c.ambientIntensity;
+  sunLight.color.copy(c.sun);
+  sunLight.intensity = c.sunIntensity;
+  skyMat.uniforms.topColor.value.copy(c.topSky);
+  skyMat.uniforms.bottomColor.value.copy(c.botSky);
+  lhLight.intensity = c.lhIntensity;
+  cwLight.intensity = c.winIntensity;
+  winGlass.material.color.setHex(
+    Math.round(255 * (0.3 + 0.7 * c.winIntensity)) * 0x100 +
+    Math.round(200 * (0.3 + 0.7 * c.winIntensity)) * 0x10 +
+    Math.round(50 * (0.3 + 0.7 * c.winIntensity))
+  );
+  lampMat.color.setHex(0xffffaa);
+  lampMat.opacity = 0.5 + 0.5 * c.lhIntensity;
+  glowSprite.material.opacity = Math.min(1, 0.3 + 0.7 * c.lhIntensity);
+  starsMat.opacity = c.starOpacity;
+  beamMat.opacity = c.beamOpacity;
+  innerBeamMat.opacity = c.beamOpacity * 1.5;
+
+  // Tone mapping exposure
+  renderer.toneMappingExposure = 0.6 + 0.6 * c.sunIntensity;
+}
+
+// ─── Animation ───
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  const elapsed = clock.getElapsedTime();
+
+  // Island bob
+  islandGroup.position.y = Math.sin(elapsed * 0.6) * 0.15;
+
+  // Lighthouse beam rotation
+  beam.rotation.y = elapsed * 0.8;
+  innerBeam.rotation.y = elapsed * 0.8;
+
+  // Water wave animation
+  const wPos = waterGeo.attributes.position;
+  for (let i = 0; i < wPos.count; i++) {
+    const x = wPos.getX(i);
+    const z = wPos.getZ(i);
+    const dist = Math.sqrt(x * x + z * z);
+    const wave = Math.sin(dist * 1.5 - elapsed * 2) * 0.08 +
+                 Math.sin(x * 0.8 + elapsed * 1.5) * 0.04 +
+                 Math.cos(z * 1.2 - elapsed * 1.8) * 0.05;
+    wPos.setY(i, wave);
+  }
+  wPos.needsUpdate = true;
+
+  // Clouds drift
+  clouds.forEach(c => {
+    c.userData.angle += c.userData.speed * delta;
+    c.position.x = Math.cos(c.userData.angle) * c.userData.radius;
+    c.position.z = Math.sin(c.userData.angle) * c.userData.radius;
+    c.position.y = c.userData.y + Math.sin(elapsed * 0.3 + c.userData.angle) * 0.5;
+  });
+
+  // Seagulls
+  seagulls.forEach(g => {
+    const ud = g.userData;
+    ud.orbitAngle += ud.orbitSpeed * delta;
+    g.position.x = Math.cos(ud.orbitAngle) * ud.orbitRadius;
+    g.position.z = Math.sin(ud.orbitAngle) * ud.orbitRadius;
+    g.position.y = ud.baseY + Math.sin(elapsed * 2 + ud.orbitAngle) * 0.8;
+    g.rotation.y = -ud.orbitAngle + Math.PI / 2;
+    // Flap wings
+    const flap = Math.sin(elapsed * 8 + ud.flapPhase) * 0.4;
+    ud.leftWing.rotation.z = flap;
+    ud.rightWing.rotation.z = -flap;
+  });
+
+  // Stars twinkle
+  stars.rotation.y = elapsed * 0.01;
+
+  // Day-dusk cycle
+  cycleTime = (elapsed % cycleDuration) / cycleDuration;
+  applyCycle(cycleTime);
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+
+// ─── Resize ───
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
