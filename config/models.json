@@ -1,0 +1,12 @@
+{
+  "providers": {
+    "llamacpp": {
+      "baseUrl": "http://localhost:8081/v1",
+      "api": "openai-completions",
+      "apiKey": "local",
+      "models": [
+        { "id": "qwen36-35b", "name": "Qwen3.6 35B-A3B (llama.cpp 1.0)", "reasoning": true, "contextWindow": 65536, "maxTokens": 32768 }
+      ]
+    }
+  }
+}
