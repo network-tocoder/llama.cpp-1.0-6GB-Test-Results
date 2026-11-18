@@ -1,0 +1,965 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vintage 35mm Camera</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overflow:hidden;background:#1a1a1a;font-family:'Courier New',monospace;color:#e0e0e0}
+canvas{display:block}
+#hud{position:absolute;top:15px;left:15px;pointer-events:none;z-index:10}
+#frame-counter{background:rgba(0,0,0,.7);padding:8px 16px;border-radius:6px;font-size:18px;border:1px solid rgba(255,255,255,.15)}
+#frame-counter span{color:#ff6b35;font-weight:bold;font-size:22px}
+#hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,107,53,.9);padding:12px 28px;border-radius:8px;font-size:20px;font-weight:bold;display:none;z-index:20;text-align:center;pointer-events:none}
+#flash-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:white;opacity:0;pointer-events:none;z-index:30;transition:opacity .05s}
+#controls{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);display:flex;gap:12px;z-index:10;pointer-events:auto}
+.btn{background:rgba(0,0,0,.75);color:#e0e0e0;border:1px solid rgba(255,255,255,.2);padding:10px 20px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:14px;transition:all .2s}
+.btn:hover{background:rgba(255,107,53,.6);border-color:#ff6b35}
+.btn.active{background:rgba(255,107,53,.8);border-color:#ff6b35}
+#zoom-container{position:absolute;right:20px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;z-index:10}
+#zoom-container>span{font-size:12px;color:#aaa}
+#zoom-slider{-webkit-appearance:none;width:120px;height:6px;border-radius:3px;background:linear-gradient(to right,#ff6b35,#333);outline:none;writing-mode:vertical-lr;direction:rtl;height:180px;width:6px}
+#zoom-slider::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#ff6b35;cursor:pointer;border:2px solid #fff}
+#zoom-readout{font-size:13px;color:#ff6b35;background:rgba(0,0,0,.7);padding:6px 12px;border-radius:4px;border:1px solid rgba(255,255,255,.15)}
+#rewind-btn{position:absolute;top:60px;right:20px;background:rgba(255,107,53,.85);color:#fff;border:none;padding:14px 24px;border-radius:8px;cursor:pointer;font-family:inherit;font-size:16px;font-weight:bold;display:none;z-index:10;animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,107,53,.5)}50%{box-shadow:0 0 0 10px rgba(255,107,53,0)}}
+#finish-msg{position:absolute;top:105px;right:20px;background:rgba(0,0,0,.85);border:2px solid #ff6b35;padding:16px 24px;border-radius:8px;display:none;z-index:10;text-align:center;pointer-events:none}
+#finish-msg h3{color:#ff6b35;margin-bottom:6px;font-size:18px}
+#finish-msg p{font-size:13px;color:#ccc}
+#labels{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:15}
+.label{position:absolute;background:rgba(0,0,0,.85);color:#ff6b35;padding:4px 10px;border-radius:4px;font-size:11px;white-space:nowrap;border:1px solid rgba(255,107,53,.3);transform:translate(-50%,-50%);transition:opacity .3s}
+#finish-banner{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.85);display:none;z-index:40;justify-content:center;align-items:center;flex-direction:column;gap:20px}
+#finish-banner h1{color:#ff6b35;font-size:48px;text-shadow:0 0 30px rgba(255,107,53,.5)}
+#finish-banner p{color:#aaa;font-size:18px}
+#instructions{position:absolute;bottom:65px;left:50%;transform:translateX(-50%);color:#666;font-size:11px;z-index:10;pointer-events:none;text-align:center}
+</style>
+</head>
+<body>
+<div id="hud"><div id="frame-counter">Frame <span id="frame-num">0</span> / 36</div></div>
+<div id="hint">Advance the film first</div>
+<div id="flash-overlay"></div>
+<div id="zoom-container">
+  <div id="zoom-readout">35mm</div>
+  <input type="range" id="zoom-slider" min="35" max="90" value="35" step="1">
+  <span style="font-size:10px;color:#666">Zoom</span>
+</div>
+<div id="controls">
+  <button class="btn" id="finish-btn-black">Black</button>
+  <button class="btn active" id="finish-btn-chrome">Chrome</button>
+  <button class="btn" id="finish-btn-olive">Olive</button>
+  <button class="btn" id="explode-btn">Exploded View</button>
+</div>
+<div id="instructions">Space=Shutter | A=Advance | E=Explode | Scroll=Zoom</div>
+<div id="rewind-btn">⟲ REWIND FILM</div>
+<div id="finish-msg"><h3>Rolled Out</h3><p>Frame 36 exposed</p></div>
+<div id="labels"></div>
+<div id="finish-banner"><h1>Roll Finished</h1><p>Press Rewind to return to frame 0</p><button class="btn" id="banner-rewind">⟲ Rewind</button></div>
+
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.160.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+/* ═══════════════════════════════════════════
+   GLOBALS
+   ═══════════════════════════════════════════ */
+let scene, camera, renderer, controls;
+let frameCount = 0;
+const MAX_FRAMES = 36;
+let shutterLocked = false;
+let isExploded = false;
+let currentFinish = 'chrome';
+let zoomFocal = 35;
+let cameraGroup;
+let bodyParts = {};
+let shutterButton, advanceLever, lensBarrel, chromeMat, darkMetalMat;
+let shutterAnimating = false;
+let leverAnimating = false;
+let rewindAnimating = false;
+let hintTimeout;
+
+const finishes = {
+  chrome:  { body: 0x3a3a38, metal: 0xe8e8e4, accent: 0x555555 },
+  black:   { body: 0x1a1a1a, metal: 0x888888, accent: 0x333333 },
+  olive:   { body: 0x3d4a2e, metal: 0x8a9a6b, accent: 0x2d3520 }
+};
+
+/* ═══════════════════════════════════════════
+   TEXTURE GENERATORS
+   ═══════════════════════════════════════════ */
+function createLeatheretteTexture(baseColor) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 512;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = baseColor;
+  ctx.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 60000; i++) {
+    const x = Math.random() * 512, y = Math.random() * 512;
+    const bright = Math.random() * 30 - 15;
+    const r = parseInt(baseColor.slice(1,3),16) + bright;
+    const g = parseInt(baseColor.slice(3,5),16) + bright;
+    const b = parseInt(baseColor.slice(5,7),16) + bright;
+    ctx.fillStyle = `rgb(${Math.max(0,Math.min(255,r))},${Math.max(0,Math.min(255,g))},${Math.max(0,Math.min(255,b))})`;
+    ctx.fillRect(x, y, 1 + Math.random()*2, 1 + Math.random()*2);
+  }
+  for (let i = 0; i < 3000; i++) {
+    ctx.fillStyle = `rgba(0,0,0,${Math.random()*0.15})`;
+    ctx.beginPath();
+    ctx.arc(Math.random()*512, Math.random()*512, 0.5+Math.random(), 0, Math.PI*2);
+    ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 1);
+  return tex;
+}
+
+function createMetalTexture() {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 512;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 512, 0);
+  grad.addColorStop(0, '#666');
+  grad.addColorStop(0.3, '#999');
+  grad.addColorStop(0.5, '#aaa');
+  grad.addColorStop(0.7, '#999');
+  grad.addColorStop(1, '#666');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 512, 512);
+  for (let y = 0; y < 512; y++) {
+    ctx.strokeStyle = `rgba(255,255,255,${Math.random()*0.08})`;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(0, y + Math.random()*2);
+    ctx.lineTo(512, y + Math.random()*2);
+    ctx.stroke();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
+function createDistanceScaleTexture() {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#222';
+  ctx.fillRect(0, 0, 512, 128);
+  const marks = [1, 1.5, 2, 3, 5, 10, Infinity];
+  const xStart = 30, xEnd = 480, baseY = 80;
+  marks.forEach((v, i) => {
+    const x = xStart + (xEnd - xStart) * (i / (marks.length - 1));
+    ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, baseY); ctx.lineTo(x, baseY - 20); ctx.stroke();
+    ctx.font = '16px monospace';
+    ctx.fillStyle = i === marks.length-1 ? '#fff' : '#ff6b35';
+    ctx.textAlign = 'center';
+    ctx.fillText(v === Infinity ? '∞' : v.toString(), x, baseY - 24);
+    ctx.font = '10px monospace'; ctx.fillStyle = '#888';
+    const ft = Math.round(v === Infinity ? 999 : v * 3.28);
+    ctx.fillText(ft + "'", x, baseY + 18);
+  });
+  ctx.strokeStyle = '#ff6b35'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(256, 20); ctx.lineTo(256, 108); ctx.stroke();
+  return new THREE.CanvasTexture(c);
+}
+
+/* ═══════════════════════════════════════════
+   AUDIO
+   ═══════════════════════════════════════════ */
+function playShutterSound() {
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const dur = 0.12;
+    const buf = ac.createBuffer(1, ac.sampleRate * dur, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      const t = i / ac.sampleRate;
+      data[i] = (Math.random()*2-1) * Math.exp(-t*40) * 0.4
+              + Math.sin(t*800*Math.PI*2) * Math.exp(-t*60) * 0.15
+              + Math.sin(t*2000*Math.PI*2) * Math.exp(-t*100) * 0.05;
+    }
+    const src = ac.createBufferSource(); src.buffer = buf;
+    const gain = ac.createGain();
+    gain.gain.setValueAtTime(0.6, ac.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+    src.connect(gain).connect(ac.destination); src.start();
+    // second click (mirror movement)
+    setTimeout(() => {
+      const buf2 = ac.createBuffer(1, ac.sampleRate*0.05, ac.sampleRate);
+      const d2 = buf2.getChannelData(0);
+      for (let i = 0; i < d2.length; i++) {
+        const t = i / ac.sampleRate;
+        d2[i] = (Math.random()*2-1) * Math.exp(-t*60) * 0.2;
+      }
+      const s2 = ac.createBufferSource(); s2.buffer = buf2;
+      const g2 = ac.createGain();
+      s2.connect(g2).connect(ac.destination); s2.start();
+    }, 80);
+  } catch(e) {}
+}
+
+function playRewindSound() {
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const dur = 2.5;
+    const buf = ac.createBuffer(1, ac.sampleRate*dur, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      const t = i / ac.sampleRate;
+      data[i] = Math.sin(t*400*Math.PI*2)*Math.exp(-t*2)*0.15
+              + (Math.random()*2-1)*Math.exp(-t*3)*0.12;
+    }
+    const src = ac.createBufferSource(); src.buffer = buf;
+    src.connect(ac.createGain()).connect(ac.destination); src.start();
+  } catch(e) {}
+}
+
+function playAdvanceSound() {
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = ac.createBuffer(1, ac.sampleRate*0.15, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) {
+      const t = i / ac.sampleRate;
+      data[i] = (Math.random()*2-1) * Math.exp(-t*20) * 0.25;
+    }
+    const src = ac.createBufferSource(); src.buffer = buf;
+    src.connect(ac.createGain()).connect(ac.destination); src.start();
+  } catch(e) {}
+}
+
+/* ═══════════════════════════════════════════
+   FLASH & HINT
+   ═══════════════════════════════════════════ */
+function triggerFlash() {
+  const overlay = document.getElementById('flash-overlay');
+  overlay.style.transition = 'none'; overlay.style.opacity = '0.8';
+  requestAnimationFrame(() => {
+    overlay.style.transition = 'opacity 0.3s ease-out';
+    overlay.style.opacity = '0';
+  });
+}
+
+function showHint(text) {
+  const h = document.getElementById('hint');
+  h.textContent = text; h.style.display = 'block';
+  clearTimeout(hintTimeout);
+  hintTimeout = setTimeout(() => h.style.display = 'none', 2000);
+}
+
+function updateFrameCounter() {
+  document.getElementById('frame-num').textContent = frameCount;
+  const rewBtn = document.getElementById('rewind-btn');
+  const finishMsg = document.getElementById('finish-msg');
+  const finishBanner = document.getElementById('finish-banner');
+  if (frameCount >= MAX_FRAMES) {
+    rewBtn.style.display = 'block';
+    finishMsg.style.display = 'block';
+    finishBanner.style.display = 'flex';
+  } else {
+    rewBtn.style.display = 'none';
+    finishMsg.style.display = 'none';
+    finishBanner.style.display = 'none';
+  }
+}
+
+/* ═══════════════════════════════════════════
+   SCENE SETUP
+   ═══════════════════════════════════════════ */
+function initScene() {
+  scene = new THREE.Scene();
+  // Soft light-grey studio gradient
+  const bgCanvas = document.createElement('canvas');
+  bgCanvas.width = 512; bgCanvas.height = 512;
+  const bgCtx = bgCanvas.getContext('2d');
+  const bgGrad = bgCtx.createRadialGradient(256, 200, 50, 256, 256, 400);
+  bgGrad.addColorStop(0, '#e8e6e1');
+  bgGrad.addColorStop(0.5, '#d4d0c8');
+  bgGrad.addColorStop(1, '#a09c94');
+  bgCtx.fillStyle = bgGrad;
+  bgCtx.fillRect(0, 0, 512, 512);
+  scene.background = new THREE.CanvasTexture(bgCanvas);
+  scene.fog = new THREE.FogExp2(0xd4d0c8, 0.04);
+
+  camera = new THREE.PerspectiveCamera(38, window.innerWidth/window.innerHeight, 0.1, 100);
+  // Front three-quarter view, lens facing viewer, ~60% fill
+  camera.position.set(2.8, 1.2, 3.2);
+  camera.lookAt(0, 0, 0);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.6;
+  document.body.appendChild(renderer.domElement);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.target.set(0, 0, 0);
+  controls.minDistance = 2;
+  controls.maxDistance = 12;
+  controls.update();
+
+  // Brighter, more balanced studio lighting
+  const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+  scene.add(ambient);
+
+  const keyLight = new THREE.DirectionalLight(0xfff8f0, 3.2);
+  keyLight.position.set(5, 7, 4);
+  keyLight.castShadow = true;
+  keyLight.shadow.mapSize.set(2048, 2048);
+  keyLight.shadow.camera.near = 0.5;
+  keyLight.shadow.camera.far = 25;
+  keyLight.shadow.camera.left = -5; keyLight.shadow.camera.right = 5;
+  keyLight.shadow.camera.top = 5; keyLight.shadow.camera.bottom = -5;
+  keyLight.shadow.bias = -0.0005;
+  keyLight.shadow.radius = 4;
+  scene.add(keyLight);
+
+  const fillLight = new THREE.DirectionalLight(0xd0e0ff, 1.0);
+  fillLight.position.set(-4, 3, -2); scene.add(fillLight);
+
+  // Strong rim light for edge definition
+  const rimLight = new THREE.DirectionalLight(0xfff0d0, 1.8);
+  rimLight.position.set(-3, 3, -5); scene.add(rimLight);
+
+  const topLight = new THREE.PointLight(0xffffff, 0.8, 20);
+  topLight.position.set(0, 6, 1); scene.add(topLight);
+
+  const groundGeo = new THREE.PlaneGeometry(30, 30);
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0xb8b4ac, roughness: 0.95, metalness: 0 });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI/2; ground.position.y = -1.8;
+  ground.receiveShadow = true; scene.add(ground);
+}
+
+/* ═══════════════════════════════════════════
+   BUILD CAMERA
+   ═══════════════════════════════════════════ */
+function buildCamera() {
+  cameraGroup = new THREE.Group();
+  const f = finishes.chrome; // default finish is Chrome
+  const leatherTex = createLeatheretteTexture('#3a3a38');
+
+  const leatherMat = new THREE.MeshStandardMaterial({
+    map: leatherTex, roughness: 0.85, metalness: 0.05, color: f.body
+  });
+  chromeMat = new THREE.MeshStandardMaterial({
+    map: createMetalTexture(), roughness: 0.25, metalness: 0.95, color: f.metal
+  });
+  darkMetalMat = new THREE.MeshStandardMaterial({
+    map: createMetalTexture(), roughness: 0.5, metalness: 0.8, color: f.accent
+  });
+  const glassMat = new THREE.MeshPhysicalMaterial({
+    roughness: 0.05, metalness: 0, transmission: 0.92, thickness: 0.3,
+    ior: 1.5, color: 0x88aacc, transparent: true, opacity: 0.3
+  });
+
+  const bodyGroup = new THREE.Group();
+
+  // Main body — classic rangefinder 3:2:1 proportions, rounded edges
+  const body = new THREE.Mesh(
+    new RoundedBoxGeometry(1.8, 0.82, 1.2, 4, 0.04), leatherMat
+  );
+  body.castShadow = true; body.receiveShadow = true;
+  bodyGroup.add(body); bodyParts.body = body;
+
+  // Top plate — chrome, sits on rounded body edge
+  const topPlate = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.06, 1.18), chromeMat);
+  topPlate.position.y = 0.43; topPlate.castShadow = true;
+  bodyGroup.add(topPlate); bodyParts.topPlate = topPlate;
+
+  // Bottom plate
+  const bottomPlate = new THREE.Mesh(new THREE.BoxGeometry(1.74, 0.05, 1.18), chromeMat);
+  bottomPlate.position.y = -0.43; bottomPlate.castShadow = true;
+  bodyGroup.add(bottomPlate); bodyParts.bottomPlate = bottomPlate;
+
+  // Front face plate
+  const frontPlate = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.82, 1.18), chromeMat);
+  frontPlate.position.z = 0.62; frontPlate.castShadow = true;
+  bodyGroup.add(frontPlate); bodyParts.frontPlate = frontPlate;
+
+  // Viewfinder window — on top plate surface
+  const viewfinder = new THREE.Mesh(
+    new THREE.BoxGeometry(0.32, 0.18, 0.04),
+    new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6, metalness: 0.3 })
+  );
+  viewfinder.position.set(0.3, 0.47, 0.28);
+  bodyGroup.add(viewfinder); bodyParts.viewfinder = viewfinder;
+
+  const vfGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.28, 0.14), glassMat.clone());
+  vfGlass.position.set(0.3, 0.47, 0.31);
+  bodyGroup.add(vfGlass); bodyParts.vfGlass = vfGlass;
+
+  // Rangefinder window — on top plate
+  const rdWin = new THREE.Mesh(new THREE.CircleGeometry(0.11, 32), glassMat.clone());
+  rdWin.position.set(-0.33, 0.46, 0.3); rdWin.rotation.x = -Math.PI/2;
+  bodyGroup.add(rdWin); bodyParts.rangefinder = rdWin;
+
+  // Lens mount ring — chrome, centered on front face
+  const mountRing = new THREE.Mesh(new THREE.TorusGeometry(0.30, 0.035, 16, 32), chromeMat);
+  mountRing.position.z = 0.65;
+  bodyGroup.add(mountRing); bodyParts.mountRing = mountRing;
+
+  // ── Lens Assembly — centred on front face ──
+  lensBarrel = new THREE.Group();
+  lensBarrel.position.z = 0.69;
+  bodyGroup.add(lensBarrel); bodyParts.lensBarrel = lensBarrel;
+
+  // Base lens cylinder
+  const lensBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.28, 0.28, 0.12, 32), darkMetalMat
+  );
+  lensBase.rotation.x = Math.PI/2; lensBase.castShadow = true;
+  lensBarrel.add(lensBase);
+
+  // Barrel extension (zooms)
+  const barrelExt = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.26, 0.28, 0.0, 32), darkMetalMat
+  );
+  barrelExt.rotation.x = Math.PI/2; barrelExt.castShadow = true;
+  lensBarrel.add(barrelExt); bodyParts.barrelExt = barrelExt;
+
+  // Inner barrel
+  const lensInner = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.24, 0.0, 32), chromeMat
+  );
+  lensInner.rotation.x = Math.PI/2; lensInner.castShadow = true;
+  lensBarrel.add(lensInner); bodyParts.lensInner = lensInner;
+
+  // Front glass element
+  const frontElem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.23, 0.23, 0.03, 32),
+    new THREE.MeshPhysicalMaterial({
+      roughness: 0.02, metalness: 0.1, transmission: 0.9, thickness: 0.5,
+      color: 0x6688aa, transparent: true, opacity: 0.25
+    })
+  );
+  frontElem.rotation.x = Math.PI/2;
+  lensBarrel.add(frontElem); bodyParts.frontElem = frontElem;
+
+  // Focus ring
+  const focusRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.3, 0.035, 16, 48), darkMetalMat
+  );
+  focusRing.position.z = 0.06; focusRing.castShadow = true;
+  lensBarrel.add(focusRing); bodyParts.focusRing = focusRing;
+
+  // Focus ring detail lines
+  for (let i = 0; i < 20; i++) {
+    const line = new THREE.Mesh(
+      new THREE.BoxGeometry(0.015, 0.04, 0.01), chromeMat
+    );
+    const a = (i/20)*Math.PI*2;
+    line.position.set(Math.cos(a)*0.3, Math.sin(a)*0.3, 0.06);
+    line.rotation.z = a;
+    lensBarrel.add(line);
+  }
+
+  // Distance scale
+  const scalePlane = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.5, 0.12),
+    new THREE.MeshStandardMaterial({ map: createDistanceScaleTexture(), roughness: 0.8 })
+  );
+  scalePlane.position.set(0, -0.28, 0.01);
+  lensBarrel.add(scalePlane); bodyParts.scalePlane = scalePlane;
+
+  // ── Shutter Button ──
+  const shutterBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.08, 0.09, 0.04, 16), chromeMat
+  );
+  shutterBase.position.set(0.60, 0.44, 0); bodyGroup.add(shutterBase);
+
+  shutterButton = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.06, 0.05, 16),
+    new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.35, metalness: 0.85 })
+  );
+  shutterButton.position.set(0.60, 0.49, 0); shutterButton.castShadow = true;
+  bodyGroup.add(shutterButton); bodyParts.shutterButton = shutterButton;
+
+  // ── Film Advance Lever ──
+  advanceLever = new THREE.Group();
+  advanceLever.position.set(-0.90, 0.45, 0.38);
+  bodyGroup.add(advanceLever); bodyParts.leverPivot = advanceLever;
+
+  const leverArm = new THREE.Mesh(
+    new THREE.BoxGeometry(0.04, 0.04, 0.32), chromeMat
+  );
+  leverArm.position.set(0, 0, 0.16); leverArm.castShadow = true;
+  advanceLever.add(leverArm);
+
+  const leverTip = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.045, 0.045, 0.04, 16), darkMetalMat
+  );
+  leverTip.rotation.x = Math.PI/2; leverTip.position.set(0, 0, 0.34);
+  advanceLever.add(leverTip); bodyParts.leverTip = leverTip;
+
+  // ── Rewind Knob ──
+  const rewindGroup = new THREE.Group();
+  rewindGroup.position.set(0, 0, 0);
+  const rewindBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.14, 0.1, 16), chromeMat
+  );
+  rewindGroup.add(rewindBase);
+  const crank = new THREE.Mesh(
+    new THREE.BoxGeometry(0.06, 0.08, 0.28), chromeMat
+  );
+  crank.position.set(0, 0.06, 0.12);
+  rewindGroup.add(crank);
+  const knobHandle = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.04, 0.12), darkMetalMat
+  );
+  knobHandle.position.set(0, 0.1, 0.26);
+  rewindGroup.add(knobHandle);
+  rewindGroup.position.set(0, 0.45, -0.4);
+  bodyGroup.add(rewindGroup); bodyParts.rewindKnob = rewindGroup;
+
+  // ── Strap Lugs ──
+  const lugGeo = new THREE.TorusGeometry(0.05, 0.015, 8, 16);
+  const positions = [[0.78,0.22,0.52],[0.78,0.22,-0.52],[-0.78,0.22,0.52],[-0.78,0.22,-0.52]];
+  bodyParts.strapLugs = positions.map(p => {
+    const lug = new THREE.Mesh(lugGeo, chromeMat);
+    lug.position.set(p[0], p[1], p[2]); lug.rotation.y = Math.PI/2;
+    bodyGroup.add(lug); return lug;
+  });
+
+  // ── Top plate details ──
+  const speedDial = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.10, 0.10, 0.03, 32), darkMetalMat
+  );
+  speedDial.position.set(-0.55, 0.44, 0); bodyGroup.add(speedDial);
+
+  for (let i = 0; i < 8; i++) {
+    const mark = new THREE.Mesh(
+      new THREE.BoxGeometry(0.01, 0.012, 0.01), chromeMat
+    );
+    const a = (i/8)*Math.PI*2;
+    mark.position.set(-0.55+Math.sin(a)*0.08, 0.455, Math.cos(a)*0.08);
+    bodyGroup.add(mark);
+  }
+
+  const timer = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.035, 0.035, 0.05, 16), darkMetalMat
+  );
+  timer.position.set(-0.3, 0.44, 0.45);
+  bodyGroup.add(timer); bodyParts.timer = timer;
+
+  // ── Bottom ──
+  const tripod = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.04, 0.04, 8), chromeMat
+  );
+  tripod.position.set(0, -0.46, 0); bodyGroup.add(tripod);
+
+  // ── Film window (back) ──
+  const fw = new THREE.Mesh(
+    new THREE.BoxGeometry(0.4, 0.5, 0.02),
+    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 })
+  );
+  fw.position.set(0, 0, -0.61); bodyGroup.add(fw);
+
+  // ── Exposure counter ──
+  const ec = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.08, 0.04),
+    new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.7 })
+  );
+  ec.position.set(-0.55, 0.43, 0.61); bodyGroup.add(ec);
+
+  const cn = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.08, 0.06),
+    new THREE.MeshBasicMaterial({ color: 0xff6b35 })
+  );
+  cn.position.set(-0.55, 0.43, 0.64); bodyGroup.add(cn);
+  bodyParts.counterNum = cn;
+
+  // Nameplate
+  const np = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.06, 0.005), chromeMat
+  );
+  np.position.set(0, 0.15, 0.61); bodyGroup.add(np);
+
+  cameraGroup.add(bodyGroup);
+  scene.add(cameraGroup);
+  updateZoomPosition(35);
+}
+
+/* ═══════════════════════════════════════════
+   ZOOM
+   ═══════════════════════════════════════════ */
+function updateZoomPosition(focal) {
+  const t = (focal - 35) / (90 - 35); // 0..1
+  if (bodyParts.barrelExt) {
+    bodyParts.barrelExt.scale.z = 0.1 + t * 0.5;
+    bodyParts.barrelExt.position.z = 0.06 + t * 0.15;
+  }
+  if (bodyParts.lensInner) {
+    bodyParts.lensInner.scale.z = 0.05 + t * 0.4;
+    bodyParts.lensInner.position.z = 0.1 + t * 0.3;
+  }
+  if (bodyParts.frontElem) {
+    bodyParts.frontElem.position.z = 0.06 + t * 0.38;
+  }
+  document.getElementById('zoom-readout').textContent = Math.round(focal) + 'mm';
+}
+
+/* ═══════════════════════════════════════════
+   FINISH
+   ═══════════════════════════════════════════ */
+function setFinish(name) {
+  currentFinish = name;
+  document.querySelectorAll('#controls button').forEach(b => b.classList.remove('active'));
+  const btnId = 'finish-btn-' + name;
+  const btn = document.getElementById(btnId);
+  if (btn) btn.classList.add('active');
+  const f = finishes[name];
+  if (bodyParts.body) bodyParts.body.material.color.set(f.body);
+  if (bodyParts.topPlate) bodyParts.topPlate.material.color.set(f.metal);
+  if (bodyParts.bottomPlate) bodyParts.bottomPlate.material.color.set(f.metal);
+  if (bodyParts.frontPlate) bodyParts.frontPlate.material.color.set(f.metal);
+  if (bodyParts.leverTip) bodyParts.leverTip.material.color.set(f.accent);
+  if (bodyParts.focusRing) bodyParts.focusRing.material.color.set(f.accent);
+  if (chromeMat) chromeMat.color.set(f.metal);
+  if (darkMetalMat) darkMetalMat.color.set(f.accent);
+  if (bodyParts.strapLugs) {
+    bodyParts.strapLugs.forEach(l => l.material.color.set(f.metal));
+  }
+  if (advanceLever) {
+    advanceLever.children.forEach(c => {
+      if (c.material && c.material.color) c.material.color.set(f.metal);
+    });
+  }
+  if (bodyParts.rewindKnob) {
+    bodyParts.rewindKnob.children.forEach(c => {
+      if (c.material && c.material.color) c.material.color.set(f.metal);
+    });
+  }
+}
+
+/* ═══════════════════════════════════════════
+   EXPLODED VIEW
+   ═══════════════════════════════════════════ */
+function toggleExploded() {
+  isExploded = !isExploded;
+  document.getElementById('explode-btn').classList.toggle('active', isExploded);
+}
+
+function updateExploded() {
+  const target = isExploded ? 1 : 0;
+  const speed = 0.06;
+
+  // Animate using simple lerp toward target offsets
+  const baseOffsets = {
+    topPlate:    { y: 0.43 },
+    bottomPlate: { y: -0.43 },
+    frontPlate:  { z: 0.62 },
+    viewfinder:  { y: 0.47, z: 0.28 },
+    rangefinder: { y: 0.46, z: 0.3 },
+    mountRing:   { z: 0.65 },
+    lensBarrel:  { z: 0.69 },
+    focusRing:   { z: 0.06 },
+    shutterButton:{ y: 0.49 },
+    leverPivot:  { x: -0.90, y: 0.45, z: 0.38 },
+    timer:       { y: 0.44, z: 0.45 },
+    rewindKnob:  { y: 0.45, z: -0.4 },
+  };
+
+  const offsets = {
+    topPlate:    { y: target * 0.8 },
+    bottomPlate: { y: target * -0.6 },
+    frontPlate:  { z: target * 1.2 },
+    viewfinder:  { y: target * 0.9, z: target * 0.5 },
+    rangefinder: { y: target * 0.9, z: target * 0.5 },
+    mountRing:   { z: target * 1.4 },
+    lensBarrel:  { z: target * 2.5 },
+    focusRing:   { z: target * 0.3 },
+    shutterButton:{ y: target * 0.9 },
+    leverPivot:  { x: target * -0.5, y: target * 0.7, z: target * 1.2 },
+    timer:       { y: target * 0.8 },
+    rewindKnob:  { x: target * 0.3, y: target * 0.5, z: target * -1.0 },
+  };
+
+  for (const [key, o] of Object.entries(offsets)) {
+    const part = bodyParts[key];
+    if (!part) continue;
+    for (const [axis, val] of Object.entries(o)) {
+      const base = baseOffsets[key]?.[axis] ?? 0;
+      part.position[axis] += (base + val - part.position[axis]) * speed;
+    }
+  }
+
+  // Labels
+  const labelsDiv = document.getElementById('labels');
+  labelsDiv.innerHTML = '';
+  if (isExploded) {
+    const parts = [
+      { mesh: bodyParts.topPlate, label: 'Top Plate' },
+      { mesh: bodyParts.bottomPlate, label: 'Bottom Plate' },
+      { mesh: bodyParts.frontPlate, label: 'Front Plate' },
+      { mesh: bodyParts.lensBarrel, label: 'Lens Assembly' },
+      { mesh: bodyParts.shutterButton, label: 'Shutter Button' },
+      { mesh: bodyParts.leverPivot, label: 'Film Advance Lever' },
+      { mesh: bodyParts.rewindKnob, label: 'Rewind Knob' },
+      { mesh: bodyParts.viewfinder, label: 'Viewfinder' },
+      { mesh: bodyParts.rangefinder, label: 'Rangefinder Window' },
+      { mesh: bodyParts.focusRing, label: 'Focus Ring' }
+    ];
+    parts.forEach(p => {
+      if (!p.mesh) return;
+      const pos = new THREE.Vector3();
+      p.mesh.getWorldPosition(pos);
+      pos.y += 0.25;
+      pos.project(camera);
+      const x = (pos.x * 0.5 + 0.5) * window.innerWidth;
+      const y = (-pos.y * 0.5 + 0.5) * window.innerHeight;
+      if (pos.z < 1) {
+        const el = document.createElement('div');
+        el.className = 'label';
+        el.textContent = p.label;
+        el.style.left = x + 'px';
+        el.style.top = y + 'px';
+        labelsDiv.appendChild(el);
+      }
+    });
+  }
+}
+
+/* ═══════════════════════════════════════════
+   SHUTTER
+   ═══════════════════════════════════════════ */
+function pressShutter() {
+  if (shutterAnimating || rewindAnimating) return;
+
+  if (shutterLocked) { showHint('Advance the film first'); return; }
+  if (frameCount >= MAX_FRAMES) return;
+
+  shutterAnimating = true;
+  frameCount++;
+  playShutterSound();
+  triggerFlash();
+  updateFrameCounter();
+
+  const start = shutterButton.position.y;
+  let pressed = false;
+  let releaseStart = null;
+  const pressDur = 0.06;
+  const holdDur = 0.08;
+
+  function animShutter() {
+    if (!releaseStart) {
+      shutterButton.position.y = start - 0.02;
+      pressed = true;
+      releaseStart = performance.now();
+    } else {
+      const elapsed = (performance.now() - releaseStart) / 1000;
+      if (elapsed < holdDur) {
+        requestAnimationFrame(animShutter);
+      } else {
+        shutterButton.position.y += (start - shutterButton.position.y) * 0.2;
+        if (Math.abs(shutterButton.position.y - start) < 0.001) {
+          shutterButton.position.y = start;
+          shutterAnimating = false;
+          shutterLocked = true;
+        } else {
+          requestAnimationFrame(animShutter);
+        }
+      }
+    }
+  }
+  requestAnimationFrame(animShutter);
+}
+
+/* ═══════════════════════════════════════════
+   ADVANCE LEVER
+   ═══════════════════════════════════════════ */
+function advanceFilm() {
+  if (shutterAnimating || leverAnimating || rewindAnimating) return;
+  leverAnimating = true;
+  playAdvanceSound();
+
+  const startAngle = 0;
+  const endAngle = -Math.PI * 1.2;
+  const totalDur = 0.4;
+  let startTime = null;
+
+  function animLever(now) {
+    if (!startTime) startTime = now;
+    const elapsed = (now - startTime) / 1000;
+    const t = Math.min(elapsed / totalDur, 1);
+    const eased = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2;
+    advanceLever.rotation.y = startAngle + (endAngle - startAngle) * eased;
+
+    if (t < 1) {
+      requestAnimationFrame(animLever);
+    } else {
+      // Snap back
+      const resetStart = performance.now();
+      function animReset(rn) {
+        const rt = Math.min((rn - resetStart) / 1000 / 0.2, 1);
+        advanceLever.rotation.y = endAngle + (startAngle - endAngle) * rt;
+        if (rt < 1) {
+          requestAnimationFrame(animReset);
+        } else {
+          advanceLever.rotation.y = 0;
+          leverAnimating = false;
+          shutterLocked = false;
+        }
+      }
+      requestAnimationFrame(animReset);
+    }
+  }
+  requestAnimationFrame(animLever);
+}
+
+/* ═══════════════════════════════════════════
+   REWIND
+   ═══════════════════════════════════════════ */
+function rewindFilm() {
+  if (rewindAnimating) return;
+  rewindAnimating = true;
+  playRewindSound();
+
+  const knob = bodyParts.rewindKnob;
+  const totalRot = Math.PI * 12;
+  const dur = 2.5;
+  let startTime = null;
+
+  function animRewind(now) {
+    if (!startTime) startTime = now;
+    const elapsed = (now - startTime) / 1000;
+    const t = Math.min(elapsed / dur, 1);
+    knob.rotation.y = totalRot * t;
+
+    if (t < 1) {
+      requestAnimationFrame(animRewind);
+    } else {
+      knob.rotation.y = 0;
+      rewindAnimating = false;
+      frameCount = 0;
+      shutterLocked = false;
+      updateFrameCounter();
+    }
+  }
+  requestAnimationFrame(animRewind);
+}
+
+/* ═══════════════════════════════════════════
+   INPUT HANDLING
+   ═══════════════════════════════════════════ */
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+function getRay(e) {
+  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+}
+
+function onMouseClick(e) {
+  getRay(e);
+  if (bodyParts.leverTip && raycaster.intersectObject(bodyParts.leverTip).length > 0) {
+    advanceFilm(); return;
+  }
+  if (bodyParts.shutterButton && raycaster.intersectObject(bodyParts.shutterButton).length > 0) {
+    pressShutter(); return;
+  }
+}
+
+let isDraggingLever = false;
+let dragStartX = 0;
+
+function onMouseDown(e) {
+  getRay(e);
+  if (bodyParts.leverTip && raycaster.intersectObject(bodyParts.leverTip).length > 0 && !shutterLocked) {
+    isDraggingLever = true;
+    dragStartX = e.clientX;
+    e.preventDefault();
+  }
+}
+
+function onMouseMove(e) {
+  if (isDraggingLever && advanceLever) {
+    const dx = (e.clientX - dragStartX) * 0.005;
+    advanceLever.rotation.y = Math.max(-Math.PI, Math.min(0, dx));
+  }
+}
+
+function onMouseUp(e) {
+  if (isDraggingLever) {
+    isDraggingLever = false;
+    if (Math.abs(advanceLever.rotation.y) > 0.3) {
+      advanceFilm();
+    } else {
+      advanceLever.rotation.y = 0;
+    }
+  }
+}
+
+function onWheel(e) {
+  const x = e.clientX;
+  if (x > window.innerWidth * 0.5) {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 2 : -2;
+    zoomFocal = Math.max(35, Math.min(90, zoomFocal + delta));
+    updateZoomPosition(zoomFocal);
+    document.getElementById('zoom-slider').value = zoomFocal;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   INIT
+   ═══════════════════════════════════════════ */
+function init() {
+  initScene();
+  buildCamera();
+  updateFrameCounter();
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  renderer.domElement.addEventListener('click', onMouseClick);
+  renderer.domElement.addEventListener('mousedown', onMouseDown);
+  renderer.domElement.addEventListener('mousemove', onMouseMove);
+  renderer.domElement.addEventListener('mouseup', onMouseUp);
+  renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
+
+  document.getElementById('zoom-slider').addEventListener('input', (e) => {
+    zoomFocal = parseFloat(e.target.value);
+    updateZoomPosition(zoomFocal);
+  });
+
+  document.getElementById('finish-btn-black').addEventListener('click', () => setFinish('black'));
+  document.getElementById('finish-btn-chrome').addEventListener('click', () => setFinish('chrome'));
+  document.getElementById('finish-btn-olive').addEventListener('click', () => setFinish('olive'));
+  document.getElementById('explode-btn').addEventListener('click', toggleExploded);
+  document.getElementById('rewind-btn').addEventListener('click', rewindFilm);
+  document.getElementById('banner-rewind').addEventListener('click', rewindFilm);
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') { e.preventDefault(); pressShutter(); }
+    if (e.code === 'KeyE') toggleExploded();
+    if (e.code === 'KeyA') advanceFilm();
+  });
+
+  animate();
+}
+
+/* ═══════════════════════════════════════════
+   ANIMATION LOOP
+   ═══════════════════════════════════════════ */
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  updateExploded();
+  renderer.render(scene, camera);
+}
+
+init();
+</script>
+</body>
+</html>
