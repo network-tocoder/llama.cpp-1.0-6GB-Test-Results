@@ -2,7 +2,7 @@
 
 ![llama.cpp](https://img.shields.io/badge/llama.cpp-v1.0.0-orange) ![GPU](https://img.shields.io/badge/GPU-6GB%20V%20ram-76b900) ![RAM](https://img.shields.io/badge/RAM-32GB-0ea5e9) ![Model](https://img.shields.io/badge/Model-Qwen3.6%2035B--A3B-blue) ![Agent](https://img.shields.io/badge/Agent-Pi-black) ![Cost](https://img.shields.io/badge/Cloud%20API-%240-brightgreen)
 
-📺 **Video:** [Qwen 35B Is Now Insanely Fast on a 6GB GPU! (New llama.cpp)](https://youtube.com/@NetworkCoder) *(add the video link)*
+📺 **Video:** [Qwen 35B Is Now Insanely Fast on a 6GB GPU! (New llama.cpp)](https://www.youtube.com/watch?v=p3PFSpXtJnw&t=5s) *(add the video link)*
 
 A 35B model is 22 GB on disk, almost **4× bigger than a 6 GB graphics card**. With llama.cpp 1.0 it runs at about **40 tok/s** and builds full apps through a coding agent, fully offline.
 
