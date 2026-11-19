@@ -68,7 +68,7 @@ Each build was a **single prompt** in a fresh Pi session and its own folder. Sim
 
 | Build | Lines | Time | Context used (of 64K) | Fixes | Files |
 |---|---|---|---|---|---|
-| ☕ Coffee shop landing page | 618 | ~3.5 min | ~14% | 0 | [code](projects/coffee/index.html) · [prompt](projects/coffee/PROMPT.md) |
+| ☕ Coffee shop landing page | 618 | ~3.5 min | ~14% | 0 | [ [prompt](projects/coffee/PROMPT.md) |
 | 🎵 Music player app | 450 | ~2 min | ~12% | 0 | [code](projects/player/index.html) · [prompt](projects/player/PROMPT.md) |
 | 🏝️ 3D lighthouse island | 749 | | 18.6% | 0 | [code](projects/lighthouse/index.html) · [prompt](projects/lighthouse/PROMPT.md) |
 | 📷 3D vintage film camera | 965 | | 51% | 1 | [code](projects/camera/index.html) · [prompt](projects/camera/PROMPT.md) |
