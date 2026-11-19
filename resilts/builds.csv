@@ -1,0 +1,5 @@
+build,lines,time,context_used_of_64k,fixes_needed,note
+coffee_site,618,~3.5 min,~14%,0,landing page for "Ember & Oak"
+music_player,450,~2 min,~12%,0,frosted-glass player app
+lighthouse_island,749,,18.6%,0,3D Three.js scene with day-night cycle
+film_camera,965,,51%,1,3D interactive camera; 955 lines first version, one error pasted back to Pi and fixed
